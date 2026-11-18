@@ -3,7 +3,7 @@
   "id": "freshgenerator",
   "version": "${version}",
   "name": "FreshGenerator",
-  "description": "One coherent world: envelope-aware biomes and shared snow, grass and rock transitions.",
+  "description": "Natural world generation for Minecraft 26.3: wide climate regions, logical biome borders, stepped badlands mesas, ecological forests, glaciers and deep multi-level karst caves with rare, natural entrances - no new biomes or blocks.",
   "environment": "*",
   "entrypoints": {"main": ["dev.freshgenerator.FreshGenerator"]},
   "mixins": ["freshgenerator.mixins.json"],

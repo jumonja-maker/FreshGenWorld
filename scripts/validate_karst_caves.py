@@ -20,6 +20,8 @@ NOISE = 'data/freshgenerator/worldgen/noise/highlands_v2/'
 SETTINGS = 'data/freshgenerator/worldgen/noise_settings/highlands_v2.json'
 CLASS = 'dev/freshgenerator/'
 MANIFEST = 'freshgenerator-worldgen-manifest.json'
+# 0.9.0 player-facing mod description (the only intended metadata change besides version).
+DESCRIPTION = ('Natural world generation for Minecraft 26.3: wide climate regions, logical biome borders, stepped badlands mesas, ecological forests, glaciers and deep multi-level karst caves with rare, natural entrances - no new biomes or blocks.')
 CLIMATE_ADDED = frozenset(DATA + 'landscape/climate/' + n + '.json' for n in ('biome_erosion', 'dry_belt', 'lookup_moisture', 'wetland_cap'))
 CHANGED = frozenset({DATA + 'coherent/detail/mountain_factor.json', DATA + 'coherent/detail/rock_relief.json',
                      DATA + 'final_density.json', DATA + 'regions/biome_vegetation.json', DATA + 'landscape/height_unguarded.json', SETTINGS,
@@ -72,7 +74,7 @@ def validate(candidate=CANDIDATE, baseline=BASELINE):
             if key != 'erosion':
                 require(router[key] == value, 'Unexpected router change: ' + key)
         require(decode(DATA + 'coherent/surface_density.json')['type'] == 'minecraft:squeeze', 'Terrain envelope changed')
-        meta = decode('fabric.mod.json'); old_meta['version'] = VERSION
+        meta = decode('fabric.mod.json'); old_meta['version'] = VERSION; old_meta['description'] = DESCRIPTION
         require(meta == old_meta, 'Unexpected mod metadata changes')
         manifest = decode(MANIFEST); data = {n: h for n, h in new.items() if n.startswith('data/')}
         require(manifest['generated_sha256'] == data and manifest['generated_entries'] == len(data), 'Manifest inventory differs')
