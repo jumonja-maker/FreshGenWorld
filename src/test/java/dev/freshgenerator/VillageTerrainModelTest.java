@@ -33,6 +33,26 @@ class VillageTerrainModelTest {
     @Test void houseHeadroomIsNotBuried(){var c=new VillageTerrainModel(List.of(house(0,80))).column(4,4,92,63);for(int y=80;y<96;y++)assertTrue(c.density(.4,y)<0);}
     @Test void deepCavesAreBitwiseUnchanged(){var c=new VillageTerrainModel(List.of(house(0,80))).column(4,4,72,63);for(int y=-64;y<=32;y++){assertEquals(-.123456789,c.density(-.123456789,y));assertTrue(c.permitsCarving(y));}}
     @Test void highSkyRemainsUnchanged(){var c=new VillageTerrainModel(List.of(house(0,80))).column(4,4,72,63);assertEquals(-.7,c.density(-.7,100));assertTrue(c.permitsCarving(100));}
+    @Test void raisedPlotAtTheWaterEdgeGetsAShortBankNotAWall(){
+        // 0.9.1 audit A09: 7x7 plot at 80, original ground 62/63/64, sea 63.
+        var m=new VillageTerrainModel(List.of(new VillageTerrainModel.Site(0,0,6,6,80,true)));
+        for(double base:new double[]{62,63,64}){
+            double previous=m.column(7,3,base,63).height();assertEquals(80,previous,1e-9);
+            for(int x=8;x<=18;x++){double h=m.column(x,3,base,63).height();
+                assertTrue(previous-h<=6.5,"step "+(previous-h)+" at x="+x+" base="+base);assertTrue(h<=previous+1e-9);previous=h;}
+            if(base<=63)assertEquals(base,m.column(16,3,base,63).height(),1e-9,"water bank ends within its width");
+        }
+    }
+    @Test void bankWidthChangesContinuouslyWithTheWaterDepth(){
+        // 0.9.1 audit V1: a hard switch at sea-2 moved the target height by 11.4 blocks.
+        var m=new VillageTerrainModel(List.of(new VillageTerrainModel.Site(0,0,6,6,80,true)));
+        for(int x=8;x<=16;x++){double previous=m.column(x,3,57,63).height();
+            for(double base=57.01;base<=64;base+=.01){double h=m.column(x,3,base,63).height();
+                assertTrue(Math.abs(h-previous)<.5,"jump "+(h-previous)+" at x="+x+" base="+base);previous=h;}}
+    }
+    @Test void smoothNeverLeavesTheUnitInterval(){
+        for(double v=65.99999;v<=66.00001;v+=1e-7){double s=VillageTerrainModel.smooth(63,66,v);assertTrue(s>=0&&s<=1);}
+    }
     @Test void waterOutsideActualRigidPlotsIsNotDammed(){var m=new VillageTerrainModel(List.of(house(0,80),new VillageTerrainModel.Site(10,0,35,4,75,false)));for(int x=12;x<35;x++){var c=m.column(x,2,58,63);assertEquals(0,c.influence());assertEquals(58,c.height());}}
     @Test void orderDuplicatesAndChunkTraversalDoNotChangeThePlan(){var a=house(-20,81);var b=house(20,86);var p=new VillageTerrainModel(List.of(a,b));var q=new VillageTerrainModel(List.of(b,a,a));for(int x=-64;x<64;x++)for(int z=-32;z<32;z++)assertEquals(p.column(x,z,74+x*.1,63),q.column(x,z,74+x*.1,63));}
     @Test void modelCopiesMutableInputs(){var input=new ArrayList<VillageTerrainModel.Site>();input.add(house(0,80));var m=new VillageTerrainModel(input);input.clear();assertEquals(1,m.sites().size());assertThrows(UnsupportedOperationException.class,()->m.sites().clear());}

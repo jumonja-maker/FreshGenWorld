@@ -46,7 +46,7 @@ public final class KarstCaveCompiler {
         for (String l : List.of("level_u", "level_m", "level_d")) g.noise(l, -9, 1);
         for (String s : List.of("size", "keyhole", "maze", "pit_great")) g.noise(s, -8, 1);
         g.noise("pillar", -4, 1); g.noise("rough", -4, 2); g.noise("pit_um", -6, 1); g.noise("pit_md", -6, 1);
-        g.noise("doline", -9, 1); g.noise("ramp", -9, 1); g.noise("pothole", -7, 1); g.noise("cross", -6, 1); g.noise("ramp_cross", -9, 1);
+        g.noise("doline", DOLINE_OCTAVE, 1); g.noise("ramp", -9, 1); g.noise("pothole", -7, 1); g.noise("cross", -6, 1); g.noise("ramp_cross", -9, 1);
 
         String wmx = g.node("warp_mx", cache(noise("warp_mx", 0))), wmz = g.node("warp_mz", cache(noise("warp_mz", 0)));
         String wdx = g.node("warp_dx", cache(noise("warp_dx", 0))), wdz = g.node("warp_dz", cache(noise("warp_dz", 0)));
@@ -99,7 +99,9 @@ public final class KarstCaveCompiler {
 
         // Rare entrances, only on dry ground well above the sea surface.
         String allow = g.node("entrance_allow", cache(spline(H, new double[][]{{ENTRANCE_MIN_H, 0, 0}, {ENTRANCE_MIN_H + 7, 1, 0}, {185, 1, 0}, {205, 0, 0}})));
-        String allowPot = g.node("pothole_allow", cache(spline(H, new double[][]{{POTHOLE_MIN_H, 0, 0}, {POTHOLE_MIN_H + 15, 1, 0}})));
+        // 0.9.1: a short 5-block band. In a partly allowed band the near-surface penalty
+        // pinched the shaft where it starts to wind (FULL check: closed 12 blocks down).
+        String allowPot = g.node("pothole_allow", cache(spline(H, new double[][]{{POTHOLE_MIN_H, 0, 0}, {POTHOLE_MIN_H + 5, 1, 0}})));
         // Entrance points sit exactly on upper galleries: where a gallery line crosses a
         // zero line of the cross noise. A funnel/shaft centred there always meets the
         // passage below, at every depth (no blind bowls beside a gallery).
@@ -115,8 +117,50 @@ public final class KarstCaveCompiler {
         // flaring only in its top 6 blocks into a bowl. A surface opening deeper than the
         // bowl therefore always continues down onto the gallery (no blind funnels).
         String flare = g.node("entrance_flare", clamp(sub(1, mul(sub(H, Y), 1 / 6.0)), 0, 1));
-        String doline = g.node("doline", add(max(max(mul(5, sub(sub(DOLINE_TOP, mul(.15, depthT)), noise("doline", 0))),
-                sub(add(square(mul(minAbs(gaU, gbU), 1 / UPPER_W)), square(mul(cross, 1 / (CROSS_W * 2.5)))), add(1, mul(2, flare)))),
+        // 0.9.1: dolines and potholes sit on a junction of the two gallery families and are
+        // sized in blocks: the signed distance to each upper gallery line is the plan noise
+        // divided by its local gradient (central differences over 8 blocks, 1/sqrt by spline).
+        // Sizes in noise units stretched into long rifts and wandering shafts wherever the
+        // noise flattened (measured gradients down to 0.0014 per block). These nodes are only
+        // referenced inside range_choice branches near entrance sites.
+        String invA = inverseGradient(g, "plan_a"), invB = inverseGradient(g, "plan_b");
+        String distA = g.node("plan_a_distance", cache(mul(mul(gaU, 8.0), invA)));
+        String distB = g.node("plan_b_distance", cache(mul(mul(gbU, 8.0), invB)));
+        // A junction only counts where the two gallery lines really cross. Where they run
+        // nearly parallel the two distances stop being independent coordinates and a winding
+        // shaft fell apart into closed pockets (external audit C1: cosine -0.999996, FULL
+        // check closed 22 blocks below the opening). |sin| of the crossing angle closes those.
+        String sinAB = g.node("junction_sin", cache(abs(mul(mul(sub(mul(K + "plan_a_gx", K + "plan_b_gz"), mul(K + "plan_a_gz", K + "plan_b_gx")), invA), invB))));
+        JsonElement junction = mul(JUNCTION_K, max(0, sub(JUNCTION_SIN, sinAB)));
+        // Update 19.11 (audit C1): the junction point. distA and distB grow by one block per
+        // block along the unit normals nA, nB of the two gallery lines; solving the 2x2 system
+        // gives the offset (dx, dz) to their crossing. 1/det is a spline that is exact for
+        // |det| >= 0.45 (the junction penalty closes everything below 0.39) and bounded through 0.
+        String nAx = g.node("plan_a_nx", cache(mul(K + "plan_a_gx", invA))), nAz = g.node("plan_a_nz", cache(mul(K + "plan_a_gz", invA)));
+        String nBx = g.node("plan_b_nx", cache(mul(K + "plan_b_gx", invB))), nBz = g.node("plan_b_nz", cache(mul(K + "plan_b_gz", invB)));
+        String det = g.node("junction_det", cache(sub(mul(nAx, nBz), mul(nAz, nBx))));
+        String invDet = g.node("junction_inverse_det", cache(spline(det, new double[][]{{-1, -1, -1}, {-.75, -1 / .75, -1 / (.75 * .75)},
+                {-.6, -1 / .6, -1 / (.6 * .6)}, {-.45, -1 / .45, -1 / (.45 * .45)}, {-.35, -1 / .35, 0}, {.35, 1 / .35, 0},
+                {.45, 1 / .45, -1 / (.45 * .45)}, {.6, 1 / .6, -1 / (.6 * .6)}, {.75, 1 / .75, -1 / (.75 * .75)}, {1, 1, -1}})));
+        String jdx = g.node("junction_dx", cache(mul(sub(mul(distB, nAz), mul(distA, nBz)), invDet)));
+        String jdz = g.node("junction_dz", cache(mul(sub(mul(nBx, distA), mul(nAx, distB)), invDet)));
+        // The crossing angle is judged at the junction point too (gradients of both plan noises
+        // there): on curving, nearly tangent gallery lines the local angle 15 blocks away was
+        // 0.95 while the lines met at 0.02, and the shaft was set on that false crossing
+        // (seed 0, X3192 Z3932). One decision per junction keeps a shaft whole or absent.
+        String invAJ = inverseGradientAt(g, "plan_a", jdx, jdz), invBJ = inverseGradientAt(g, "plan_b", jdx, jdz);
+        String sinJ = g.node("junction_sin_at", cache(abs(mul(mul(sub(mul(K + "plan_a_jgx", K + "plan_b_jgz"), mul(K + "plan_a_jgz", K + "plan_b_jgx")), invAJ), invBJ))));
+        JsonElement junctionJ = mul(JUNCTION_K, max(0, sub(JUNCTION_SIN_AT, sinJ)));
+        String dolN = g.node("doline_noise", cache(noise("doline", 0)));
+        String dolJ = g.node("doline_junction_noise", cache(atJunction("doline", jdx, jdz)));
+        JsonElement dolGate = mul(5, sub(sub(DOLINE_TOP, mul(.15, depthT)), dolN));
+        JsonElement dolGateJ = mul(5, sub(sub(DOLINE_TOP, mul(.15, depthT)), dolJ));
+        // Below DOLINE_NEAR the gate alone keeps rock in either form (the junction gate as well:
+        // see KarstModel.DOLINE_NEAR), so the unchanged 0.9.0 field is evaluated there.
+        JsonElement dolPlain = max(dolGate, sub(add(square(mul(minAbs(gaU, gbU), 1 / UPPER_W)), square(mul(cross, 1 / (CROSS_W * 2.5)))), add(1, mul(2, flare))));
+        JsonElement dolRound = add(max(dolGateJ, sub(add(square(mul(distA, 1 / DOLINE_R_BLOCKS)), square(mul(distB, 1 / DOLINE_R_BLOCKS))), add(1, mul(2, flare)))), junctionJ);
+        String doline = g.node("doline", add(max(obj("type", "minecraft:range_choice", "input", dolN, "min_inclusive", -1.0e6,
+                "max_exclusive", DOLINE_NEAR, "when_in_range", dolPlain, "when_out_of_range", dolRound),
                 mul(.25, sub(sub(lU, 3), Y))), penalty));
         // Inclined entrance: where an upper gallery line crosses a zero line of a slow cross
         // noise, the passage opens as a short roofless gorge. Away from that point the
@@ -131,9 +175,36 @@ public final class KarstCaveCompiler {
                 // The gate relaxes as the passage deepens, so a descent that started inside
                 // the entrance field is not cut off before it reaches the upper level.
                 mul(5, sub(sub(RAMP_GATE, clamp(mul(rampD, 1 / 250.0), 0, .35)), rampN))), penalty));
-        // Pothole: a narrow plateau shaft on a gallery crossing, bell-shaped toward the upper level.
-        String pothole = g.node("pothole", add(max(sub(max(mul(8, sub(POTHOLE, noise("pothole", 0))),
-                sub(add(square(mul(minAbs(gaU, gbU), 1 / UPPER_W)), square(mul(cross, 1 / (CROSS_W * 1.5)))), add(1, flare))),
+        // Pothole: a plateau shaft on a gallery crossing, bell-shaped toward the upper level.
+        // 0.9.1: it descends in pitches; each pitch is offset sideways from the one above,
+        // leaving natural ledges instead of one straight fall of up to 150 blocks.
+        String potDepth = g.node("pothole_depth", sub(H, Y));
+        // Update 19.11 (audit C1): the helix phase follows absolute height, not the depth below
+        // the local surface. On a steep plateau edge H changes by 20-30 blocks across one shaft,
+        // so columns of the same section sat on different turns and the shaft fell apart into
+        // closed stacked pockets (seed 0, X3192 Z3920). Near-surface terms keep potDepth.
+        String potPhase = g.node("pothole_phase", sub(POTHOLE_PHASE_TOP, Y));
+        String potShiftC = g.node("pothole_shift_cross", spline(potPhase, helix(POTHOLE_SWING * POTHOLE_R_BLOCKS, true)));
+        String potShiftP = g.node("pothole_shift_plan", spline(potPhase, helix(POTHOLE_SWING * POTHOLE_R_BLOCKS, false)));
+        // Junction of both gallery families, in blocks (see doline); the helix swings in blocks.
+        // Update 19.11 (audit C1): the section is a circle in blocks around the helix centre,
+        // which is placed relative to the junction point (offset jdx, jdz from this column).
+        JsonElement potPlan = add(jdx, potShiftP);
+        JsonElement potCross = add(jdz, potShiftC);
+        String potN = g.node("pothole_noise", cache(noise("pothole", 0)));
+        String potJ = g.node("pothole_junction_noise", cache(atJunction("pothole", jdx, jdz)));
+        // Opening threshold POTHOLE in the top POTHOLE_TOP-2 blocks, POTHOLE_BODY from POTHOLE_TOP+2 down.
+        JsonElement potThreshold = add(POTHOLE_BODY, mul(POTHOLE - POTHOLE_BODY, clamp(mul(sub(POTHOLE_TOP + 2, potDepth), .25), 0, 1)));
+        JsonElement potGate = mul(8, sub(potThreshold, potJ));
+        JsonElement potGatePlain = mul(8, sub(POTHOLE, potN));
+        // Away from pothole sites (local noise below POTHOLE_NEAR: closed in either form) the
+        // unchanged 0.9.0 shape is evaluated, so caves elsewhere keep their exact field
+        // and the pitch splines cost nothing; range_choice evaluates one branch only.
+        JsonElement plain = max(potGatePlain, sub(add(square(mul(minAbs(gaU, gbU), 1 / UPPER_W)), square(mul(cross, 1 / (CROSS_W * 1.5)))), add(1, flare)));
+        JsonElement pitched = add(max(potGate, sub(add(square(mul(potPlan, 1 / POTHOLE_R_BLOCKS)), square(mul(potCross, 1 / POTHOLE_R_BLOCKS))), add(1, flare))), junctionJ);
+        JsonElement shape = obj("type", "minecraft:range_choice", "input", potN, "min_inclusive", -1.0e6, "max_exclusive", POTHOLE_NEAR,
+                "when_in_range", plain, "when_out_of_range", pitched);
+        String pothole = g.node("pothole", add(max(sub(shape,
                 mul(.3, clamp(mul(sub(sub(H, 20), Y), 1 / 60.0), 0, 1))), mul(.25, sub(sub(lU, 2), Y))), penaltyPot));
         String entrances = g.node("entrances", max(min(min(doline, ramp), pothole), floor));
 
@@ -152,6 +223,54 @@ public final class KarstCaveCompiler {
         JsonElement up = mul(sub(Y, level), mul(mul(swell, 1 / half), sub(1, mul(dome, hall))));
         JsonElement down = mul(sub(level, Y), mul(swell, floor / half));
         return add(add(plan, square(max(up, down))), sub(rough, 1));
+    }
+    /** One axis of the winding pothole centre by depth below the surface: a Hermite
+     * approximation of cos (cross axis) or sin (plan axis) with irregular quarter
+     * turns, by phase POTHOLE_PHASE_TOP - Y (absolute height, the same for every column). */
+    static double[][] helix(double amplitude, boolean cosine) {
+        var points = new ArrayList<double[]>();
+        points.add(new double[]{0, 0, 0});
+        double d = POTHOLE_TOP; int n = POTHOLE_QUARTERS.length;
+        for (int k = 0; d < POTHOLE_PHASE_TOP + 80; k++) {
+            double q = POTHOLE_QUARTERS[k % n], before = k == 0 ? q : POTHOLE_QUARTERS[(k - 1) % n];
+            double rate = Math.PI / 2 / ((q + before) / 2), a = amplitude * POTHOLE_SWAY[k % POTHOLE_SWAY.length];
+            double c = new double[]{1, 0, -1, 0}[k % 4], s = new double[]{0, 1, 0, -1}[k % 4];
+            points.add(cosine ? new double[]{d, a * c, -a * rate * s} : new double[]{d, a * s, a * rate * c});
+            d += q;
+        }
+        return points.toArray(double[][]::new);
+    }
+    /** 8 / |gradient| of an upper joint-plan noise, as a node: central differences over
+     * 8 blocks (also kept as gx / gz nodes for the crossing angle), inverse square root by
+     * a log-spaced Hermite spline. Below the smallest gradient it saturates, so a flat noise
+     * gives large distances and no entrance. */
+    private static String inverseGradient(Graph g, String name) {
+        String gx = g.node(name + "_gx", cache(sub(shifted(name, 4, 0), shifted(name, -4, 0))));
+        String gz = g.node(name + "_gz", cache(sub(shifted(name, 0, 4), shifted(name, 0, -4))));
+        String grad2 = g.node(name + "_grad2", cache(add(square(gx), square(gz))));
+        var points = new ArrayList<double[]>();
+        for (int k = 0; k <= 20; k++) { double d = 1e-6 * Math.pow(10, k / 3.0); points.add(new double[]{d, Math.pow(d, -.5), -.5 * Math.pow(d, -1.5)}); }
+        return g.node(name + "_inverse_gradient", cache(spline(grad2, points.toArray(double[][]::new))));
+    }
+    /** The same 8 / |gradient| as {@link #inverseGradient}, at the junction point (field shifts). */
+    private static String inverseGradientAt(Graph g, String name, String dx, String dz) {
+        String gx = g.node(name + "_jgx", cache(sub(shiftedBy(name, dx, 4, dz, 0), shiftedBy(name, dx, -4, dz, 0))));
+        String gz = g.node(name + "_jgz", cache(sub(shiftedBy(name, dx, 0, dz, 4), shiftedBy(name, dx, 0, dz, -4))));
+        String grad2 = g.node(name + "_jgrad2", cache(add(square(gx), square(gz))));
+        var points = new ArrayList<double[]>();
+        for (int k = 0; k <= 20; k++) { double d = 1e-6 * Math.pow(10, k / 3.0); points.add(new double[]{d, Math.pow(d, -.5), -.5 * Math.pow(d, -1.5)}); }
+        return g.node(name + "_inverse_gradient_at", cache(spline(grad2, points.toArray(double[][]::new))));
+    }
+    private static JsonObject shiftedBy(String name, String dx, double ox, String dz, double oz) {
+        var n = noise(name, 0); n.add("shift_x", add(dx, ox)); n.add("shift_z", add(dz, oz)); return n;
+    }
+    private static JsonObject shifted(String name, double dx, double dz) {
+        // 26.3 merged shifted_noise into minecraft:noise (shift_x / shift_z, as in vanilla continents).
+        var n = noise(name, 0); n.add("shift_x", e(dx)); n.add("shift_z", e(dz)); return n;
+    }
+    /** A 2-D gate noise read at the gallery junction (offset by field shifts in blocks). */
+    private static JsonObject atJunction(String name, String dx, String dz) {
+        var n = noise(name, 0); n.add("shift_x", e(dx)); n.add("shift_z", e(dz)); return n;
     }
     private static JsonElement minAbs(String a, String b) { return min(abs(a), abs(b)); }
     private static JsonObject noise(String name, double yScale) {

@@ -17,7 +17,7 @@ public final class SurfaceOnlyCompiler {
     public static final String FINAL_DENSITY = ROOT + "final_density.json";
     public static final String PRELIMINARY = ROOT + "preliminary_surface_level.json";
     public static final String SETTINGS = "data/freshgenerator/worldgen/noise_settings/highlands_v2.json";
-    public static final String DISABLED_LABEL = "FG caves disabled";
+    public static final String DISABLED_LABEL = dev.freshgenerator.core.KarstModel.NATIVE_CARVERS_OFF;
     public static final String DISABLED_FUNCTION = P + "coherent/surface_only/caves_disabled";
     public static final Set<String> REPLACED = Set.of(SURFACE, CAVE_WEIGHT, FINAL_DENSITY, SETTINGS);
     private static final Gson G = new Gson();

@@ -3,6 +3,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.freshgenerator.forest.ForestEnvironment;
 import dev.freshgenerator.forest.ForestTelemetry;
+import dev.freshgenerator.ocean.OceanEnvironment;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.WorldGenLevel;
@@ -30,6 +31,12 @@ abstract class ForestPlacementMixin {
  @Shadow @Final private ChunkGenerator generator;
  @Unique private boolean freshgenerator$forestChecked;
  @Unique private ForestEnvironment freshgenerator$forest;
+ @Unique private boolean freshgenerator$oceanChecked;
+ @Unique private OceanEnvironment freshgenerator$ocean;
+ @Unique private OceanEnvironment freshgenerator$oceanEnvironment(){
+  if(!freshgenerator$oceanChecked){freshgenerator$ocean=OceanEnvironment.create(level,generator);freshgenerator$oceanChecked=true;}
+  return freshgenerator$ocean;
+ }
  @Unique private ForestEnvironment freshgenerator$environment(){
   if(!freshgenerator$forestChecked){freshgenerator$forest=ForestEnvironment.create(level,generator);freshgenerator$forestChecked=true;}
   return freshgenerator$forest;
@@ -48,6 +55,11 @@ abstract class ForestPlacementMixin {
    RandomSource random,BlockPos at,Operation<Boolean> original,PlacedFeature placed,RandomSource sourceRandom,BlockPos origin,boolean biomeCheck){
   if(biomeCheck){
    String hint=placed.feature().unwrapKey().map(k->k.identifier().toString()).orElse("");
+   // 0.9.1: seagrass, kelp and warm reefs follow light (depth), ground and patches.
+   if(OceanEnvironment.hint(hint)){
+    var ocean=freshgenerator$oceanEnvironment();
+    if(ocean!=null&&!ocean.retain(hint,at))return false;
+   }
    if(ForestEnvironment.hint(hint)){
     freshgenerator$environment();
     if(freshgenerator$forest!=null){

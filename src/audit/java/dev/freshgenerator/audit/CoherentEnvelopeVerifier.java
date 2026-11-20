@@ -91,7 +91,7 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         var generator=(NoiseBasedChunkGenerator)level.getChunkSource().getGenerator();
         var state=RandomState.create(server.registryAccess().lookupOrThrow(Registries.NOISE),level.getSeed(),generator.generatorSettings().value());
         boolean surfaceOnly=generator.generatorSettings().value().debugFunctions().functions().stream()
-            .anyMatch(entry->entry.label().equals("FG caves disabled"));
+            .anyMatch(entry->entry.label().equals(dev.freshgenerator.core.KarstModel.NATIVE_CARVERS_OFF));
         var height=function(server,"height");var density=function(server,"surface_density");var weight=function(server,"cave_weight");
         var nativeCaves=function(server,"native_cave_body");
         Random random=new Random(0x436f686572656e74L);int samples=0,monotone=0,roofs=0,deep=0,deepCavities=0;

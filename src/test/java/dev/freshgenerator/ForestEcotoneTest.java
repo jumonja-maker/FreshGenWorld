@@ -28,6 +28,20 @@ class ForestEcotoneTest {
                         ForestEcotone.growth(seed,x,-31,GOOD,mix));
                 }
     }
+    @Test void forestWithoutAnyRegionalSupportIsTheLimitOfVanishingSupport(){
+        // 0.9.1 audit R4 (F-1): one sample of support gave 0.011%, none gave the full 79%.
+        var own=pool("forest",10.1);
+        for(long seed:new long[]{42,2026111501}) for(int x=-40;x<=40;x+=3){
+            double none=rate(seed,x,8,own,(xx,zz)->null,10);
+            assertTrue(none<1e-6,"no support: "+none);
+            int sx=Math.floorDiv(x,16)*16+32,sz=Math.floorDiv(8,16)*16+32;
+            double one=rate(seed,x,8,own,(xx,zz)->xx==sx&&zz==sz?own:null,10);
+            assertTrue(one>=none&&one<.05,"faint support: "+one);
+        }
+        var mix=ForestEcotone.blend(5,5,own,GOOD,(xx,zz)->null);
+        assertNotNull(ForestEcotone.growth(42,5,5,GOOD,mix));
+        assertEquals(own.biome(),ForestEcotone.palette(42,5,5,GOOD,mix));
+    }
     @Test void nativeHundredfoldCapacityStepsBecomeContinuousExpectedRecruitment(){
         for(var pair:List.of(List.of(pool("forest",10.1),pool("plains",.05)),
                 List.of(pool("snowy_taiga",10.1),pool("snowy_plains",.1)),
@@ -62,7 +76,8 @@ class ForestEcotoneTest {
         var dry=new ForestEcology.Site(90,63,.1,0,.8,-.95,0,.5);
         assertFalse(ForestEcotone.compatible("minecraft:jungle","minecraft:savanna",dry));
         var forest=pool("forest",10.1);
-        assertEquals(List.of(new ForestEcotone.Share(forest,1)),ForestEcotone.blend(0,0,forest,GOOD,(x,z)->null));
+        // 0.9.1 audit R4: no regional support is the zero-support limit, not a full forest.
+        assertEquals(List.of(new ForestEcotone.Share(forest,ForestEcotone.EMPTY_SHARE)),ForestEcotone.blend(0,0,forest,GOOD,(x,z)->null));
     }
     @Test void mixturesAreIndependentOfOrderThreadsAndSignedGridBoundaries(){
         var forest=pool("forest",10.1);var plain=pool("plains",.05);

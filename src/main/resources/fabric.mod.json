@@ -3,7 +3,7 @@
   "id": "freshgenerator",
   "version": "${version}",
   "name": "FreshGenerator",
-  "description": "Natural world generation for Minecraft 26.3: wide climate regions, logical biome borders, stepped badlands mesas, ecological forests, glaciers and deep multi-level karst caves with rare, natural entrances - no new biomes or blocks.",
+  "description": "Natural world generation for Minecraft 26.3: great snow massifs with mountain biomes by real height, logical climate transitions, deep ocean floors with ridges and seamounts, stepped badlands mesas, ecological forests, glaciers and deep multi-level karst caves with rare, natural entrances - no new biomes or blocks.",
   "environment": "*",
   "entrypoints": {"main": ["dev.freshgenerator.FreshGenerator"]},
   "mixins": ["freshgenerator.mixins.json"],

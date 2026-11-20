@@ -84,7 +84,9 @@ class SurfaceOnlyCompilerTest {
         assertEquals(SurfaceOnlyCompiler.DISABLED_FUNCTION, markers.getFirst().get("function").getAsString());
         assertEquals(1, map.get(path(SurfaceOnlyCompiler.DISABLED_FUNCTION)).getAsDouble(), 0);
         String mixin = Files.readString(Path.of("src/main/java/dev/freshgenerator/mixin/CaveCarverMixin.java"));
-        String check = ".anyMatch(e->e.label().equals(\"" + SurfaceOnlyCompiler.DISABLED_LABEL + "\")))return false;";
+        assertEquals("FG caves disabled", SurfaceOnlyCompiler.DISABLED_LABEL, "Compiled pack keeps the historical marker");
+        assertFalse(mixin.contains("\"FG caves disabled\""), "Runtime reads the shared contract constant, not a literal");
+        String check = ".anyMatch(e->e.label().equals(dev.freshgenerator.core.KarstModel.NATIVE_CARVERS_OFF)))return false;";
         int marker = mixin.indexOf(check);
         assertTrue(marker > mixin.indexOf(".equals(CaveAccessModel.SETTINGS)"), "Other worlds retain native carvers");
         assertTrue(marker < mixin.indexOf("String id="), "All current carvers must return before the historical ID filter");

@@ -4,7 +4,7 @@ package dev.freshgenerator.core;
  * Callers restrict these choices to the exterior and eligible shore/forest biomes. */
 public final class LandscapeMaterials {
     private LandscapeMaterials() { }
-    public enum Cover { NATIVE, STONE, GRAVEL, SAND, GRASS, COARSE_DIRT, PODZOL }
+    public enum Cover { NATIVE, STONE, GRAVEL, SAND, GRASS, COARSE_DIRT, PODZOL, CLAY, BASALT }
     /** Symmetric differences of the continuous ground height, before block rounding
      * or the water surface. Callers sample both sides even across chunk boundaries. */
     public static double continuousSlope(double west,double east,double north,double south,double radius){
@@ -44,6 +44,50 @@ public final class LandscapeMaterials {
         if(bare>1-threshold)return Cover.COARSE_DIRT;
         return Cover.GRASS;
     }
+    /** 0.9.1: soil does not stay on a near-vertical wall. Above roughly 56-69
+     * degrees (slope 1.5-2.6 blocks per block of the continuous ground envelope)
+     * grass-topped land turns to exposed rock with an irregular, patchy edge;
+     * ordinary hills and 45-degree slopes keep their native palette. */
+    public static Cover cliff(double height,double seaLevel,double slope,double patch) {
+        check(height,seaLevel,slope,patch);
+        if(height<seaLevel+4)return Cover.NATIVE;
+        double exposed=EcotoneModel.smooth(1.5,2.6,slope);
+        double threshold=.2+.6*(patch+1)*.5;
+        return exposed>threshold?Cover.STONE:Cover.NATIVE;
+    }
+    /** 0.9.1 seabed regime below the shoreline reach (after the 0.9.1 ocean audit; Dutkiewicz
+     * et al. 2015 sediment census, Kleinhans et al. 2011 angle of repose). Steep walls expose
+     * bedrock, intermediate slopes carry gravel talus, flats hold a sediment mosaic: sand in
+     * warm water, gravel in cold water, mixed in temperate seas, and fine clay pockets on deep
+     * quiet basin floors. Patches are broad (shared ecotone patch field), not per-block noise. */
+    public static Cover seabed(double height,double seaLevel,double slope,double temperature,double patch,double rockPatch) {
+        return seabed(height,seaLevel,slope,temperature,patch,rockPatch,0);
+    }
+    /** Update 19.11 (audit O2): the same province relief that shapes the deep floor also sets
+     * its ground. Uplifts (ridges, seamounts; relief in blocks above the plain) are young
+     * volcanic rock with thin cover: rock and talus appear on gentler slopes and the exposed
+     * rock is basalt, with basalt outcrops between sediment pockets on the crests. Basins and
+     * trenches (negative relief) collect fine sediment: clay pockets widen there
+     * (Dutkiewicz et al. 2015: clay dominates the deep quiet basins). */
+    public static Cover seabed(double height,double seaLevel,double slope,double temperature,double patch,double rockPatch,double relief) {
+        check(height,seaLevel,slope,patch);
+        if(!Double.isFinite(temperature)||!Double.isFinite(rockPatch)||!Double.isFinite(relief))throw new IllegalArgumentException("Non-finite seabed input");
+        double depth=seaLevel-height;
+        if(depth<SEABED_MIN_DEPTH)return Cover.NATIVE;
+        double uplift=EcotoneModel.smooth(3,12,relief),crest=EcotoneModel.smooth(9,18,relief),basin=EcotoneModel.smooth(2,8,-relief);
+        double threshold=(rockPatch+1)*.5*(1-.45*uplift);
+        Cover rock=uplift>.5?Cover.BASALT:Cover.STONE;
+        if(EcotoneModel.smooth(.75,1.5,slope)>threshold)return rock;
+        if(EcotoneModel.smooth(.38,.95,slope)>threshold)return Cover.GRAVEL;
+        if(crest>0&&(patch+1)*.5>1-.45*crest)return Cover.BASALT;
+        double deep=EcotoneModel.smooth(18,30,depth);
+        if(patch< -.55+.30*deep+.45*basin)return Cover.CLAY;
+        double warm=EcotoneModel.smooth(.05,.45,temperature),cold=1-EcotoneModel.smooth(-.45,-.05,temperature);
+        // Probability-like share of sand: warm water sandy, cold water gravelly.
+        double sand=.55+.40*warm-.45*cold-.20*deep;
+        return (patch+1)*.5<sand?Cover.SAND:Cover.GRAVEL;
+    }
+    public static final double SEABED_MIN_DEPTH=6;
     /** Thin rooting-soil patches on stable parts of a wooded mesa. Exposed
      * terracotta slopes keep the native geological palette. Height is measured
      * above the local sea level, never against the native fixed Y97 grass gate.

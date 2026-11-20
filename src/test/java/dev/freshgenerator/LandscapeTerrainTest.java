@@ -2,6 +2,7 @@ package dev.freshgenerator;
 
 import com.google.gson.*;
 import dev.freshgenerator.core.LandscapeTerrainProgram;
+import dev.freshgenerator.core.TerrainRepair;
 import dev.freshgenerator.pack.*;
 import org.junit.jupiter.api.Test;
 import java.util.*;
@@ -60,6 +61,51 @@ class LandscapeTerrainTest {
             if(height>63)assertTrue(b>a);
             if(height<63)assertTrue(b<a);
         }
+    }
+    /** 0.9.1 repaired coast: original profile limited by the TerrainRepair ceiling. */
+    private static double repairedCoast(Map<String,Double> input){
+        java.util.function.ToDoubleFunction<String> lookup=id->id.equals(L+"coast_rock")?sample("coast_rock",input)
+            :id.equals(L+"coast_profile")?sample("coast_height",input):input.get(id);
+        double cap=TerrainRepair.coastCap(P).evaluate(lookup);
+        return TerrainRepair.coastHeight(P).evaluate(id->id.equals(L+"coast_cap")?cap:lookup.applyAsDouble(id));
+    }
+    @Test void coastalWallIsCappedWithoutDrowningOrRaisingLand() {
+        // 0.9.1 audit A01, seed 42 X1408: native height 136 -> 49 while C goes -0.163 -> -0.179.
+        double[] c={-.1629,-.1643,-.1665,-.1697,-.1735,-.1768,-.1790};
+        double[] native_={136.29,130.70,118.69,97.28,71.46,54.66,48.87};
+        for(double rock:new double[]{-1,0,1}){
+            double previous=Double.NaN;
+            for(int i=0;i<c.length;i++){
+                var input=site(c[i],-.66,.67,native_[i],0,rock);
+                double raw=sample("coast_height",input),capped=repairedCoast(input);
+                assertTrue(capped<=raw+1e-3,"never raises land");
+                if(raw>=65)assertTrue(capped>=65-1e-3,"never drowns dry land");
+                if(i>0)assertTrue(capped<=previous+1e-3,"profile stays monotone seaward");
+                previous=capped;
+            }
+            assertTrue(repairedCoast(site(c[0],-.66,.67,native_[0],0,rock))<101,"wall top is lowered");
+        }
+        // Far inland and offshore the ceiling is inactive.
+        assertEquals(sample("coast_height",site(.3,-.66,.67,200,0,0)),repairedCoast(site(.3,-.66,.67,200,0,0)),1e-3);
+        assertEquals(sample("coast_height",site(-.6,-.66,.67,40,0,0)),repairedCoast(site(-.6,-.66,.67,40,0,0)),1e-3);
+        java.util.function.ToDoubleFunction<String> soft=id->id.equals(L+"coast_rock")?0:site(-.15,-.66,.67,100,0,0).get(id);
+        java.util.function.ToDoubleFunction<String> rocky=id->id.equals(L+"coast_rock")?1:site(-.15,-.66,.67,100,0,0).get(id);
+        assertTrue(TerrainRepair.coastCap(P).evaluate(rocky)>TerrainRepair.coastCap(P).evaluate(soft),"resistant coasts keep steeper cliffs");
+    }
+    @Test void giantFlanksAreBroadWhileMainCrestsKeepTheirHeight() {
+        // 0.9.1 audit A02: steepest change of the giant mask per unit of the folded ridge field.
+        var input=site(.6,-.8,.9,192,.9,0);double oldMax=0,newMax=0,prevOld=Double.NaN,prevNew=Double.NaN;
+        for(int i=-100;i<=100;i++){input.put(P+"ridges_folded",i/100.0);
+            double o=sample("giant",input);
+            java.util.function.ToDoubleFunction<String> lookup=id->id.equals(L+"land")||id.equals(L+"province")
+                ?sample(id.substring(L.length()),input):input.get(id);
+            double n=TerrainRepair.giant(P).evaluate(lookup);
+            if(i>-100){oldMax=Math.max(oldMax,Math.abs(o-prevOld));newMax=Math.max(newMax,Math.abs(n-prevNew));}
+            prevOld=o;prevNew=n;
+            if(i>=95)assertEquals(o,n,.01,"main crest keeps its giant uplift");
+            if(i<=-95)assertEquals(0,n,1e-6,"river corridors stay free of giant uplift");
+            if(i<=-90)assertTrue(n<.005,"under one block of uplift at the corridor edge: "+n);}
+        assertTrue(newMax<=oldMax*.6,"flank steepness "+newMax+" vs "+oldMax);
     }
     @Test void softCeilingHasNoPlateauAndKeepsWorldHeightHeadroom() {
         double previous=-Double.MAX_VALUE;

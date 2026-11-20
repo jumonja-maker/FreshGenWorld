@@ -103,6 +103,18 @@ class LandscapeMaterialsTest {
   assertTrue(EcotonePolicy.COASTS.containsAll(Set.of("minecraft:beach","minecraft:snowy_beach","minecraft:stony_shore")));
   assertTrue(Collections.disjoint(EcotonePolicy.COASTS,EcotonePolicy.FOREST_FLOORS));
  }
+ @Test void nearVerticalGrassyWallsBecomeRockButHillsKeepTheirPalette(){
+  for(double patch=-1;patch<=1;patch+=.05){
+   assertEquals(LandscapeMaterials.Cover.NATIVE,LandscapeMaterials.cliff(90,63,1.0,patch),"45-degree hill keeps grass");
+   assertEquals(LandscapeMaterials.Cover.STONE,LandscapeMaterials.cliff(101,63,7.0,patch),"0.9.1 audit wall (about 7 blocks per block)");
+   assertEquals(LandscapeMaterials.Cover.NATIVE,LandscapeMaterials.cliff(66,63,7.0,patch),"shoreline keeps the coast policy");
+   boolean rock=false;for(double s=0;s<=4;s+=.01){boolean now=LandscapeMaterials.cliff(120,63,s,patch)==LandscapeMaterials.Cover.STONE;if(now)rock=true;if(rock)assertTrue(now,"steeper never regains soil");}
+  }
+  assertTrue(EcotonePolicy.CLIFFS.containsAll(Set.of("minecraft:pale_garden","minecraft:dappled_forest","minecraft:ocean","minecraft:forest")));
+  for(String kept:List.of("minecraft:beach","minecraft:stony_shore","minecraft:badlands","minecraft:wooded_badlands","minecraft:desert",
+    "minecraft:snowy_plains","minecraft:frozen_ocean","minecraft:mangrove_swamp","minecraft:swamp"))assertFalse(EcotonePolicy.CLIFFS.contains(kept),kept);
+  assertTrue(Collections.disjoint(EcotonePolicy.CLIFFS,EcotonePolicy.ALWAYS_SNOW));
+ }
  @Test void invalidGeometryIsRejected(){
   assertThrows(IllegalArgumentException.class,()->LandscapeMaterials.coast(64,63,-1,0));
   assertThrows(IllegalArgumentException.class,()->LandscapeMaterials.forest(90,63,0,Double.NaN,0,0));
@@ -137,6 +149,14 @@ class LandscapeMaterialsTest {
   // Removing precisely the new wrapper must restore the entire original rule,
   // including the other two badlands, swamp water, floor and subsurface branches.
   wooded.add("then_run",patch.get(1));
+  // 0.9.1: the seabed rule sits first in the last (deep-water floor) branch; remove it too.
+  var top=current.getAsJsonArray("sequence");var deep=top.get(top.size()-1).getAsJsonObject().getAsJsonObject("then_run").getAsJsonArray("sequence");
+  assertEquals("freshgenerator:ecotone_surface",deep.get(0).getAsJsonObject().get("type").getAsString());
+  assertFalse(deep.get(0).getAsJsonObject().get("subsurface").getAsBoolean());
+  deep.remove(0);
+  // Update 19.11: and the under-floor sediment body inserted just before that branch.
+  assertEquals("minecraft:under_floor",top.get(top.size()-2).getAsJsonObject().get("if_true").getAsString());
+  top.remove(top.size()-2);
   assertEquals(original,current);
  }
  @Test void invalidSecondMaterialDoesNotPartiallyEnableFirst(){

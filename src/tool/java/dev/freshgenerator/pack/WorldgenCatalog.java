@@ -17,6 +17,15 @@ public final class WorldgenCatalog {
   TerrainRealismCompiler.apply(out);
   BiomeReliefCompiler.apply(out);
   ClimateNicheCompiler.apply(out);
+  // 0.9.1: external-audit repairs (giant flanks, coastal walls, biome depth).
+  TerrainRepairCompiler.apply(out);
+  // 0.9.1 (audit R4): montane forest instead of savanna on the cool side of the snow line.
+  HighlandClimateCompiler.apply(out);
+  // 0.9.1 (user request): great massifs in the cores of large cold regions.
+  SnowMassifCompiler.apply(out);
+  // 0.9.1: ocean floor provinces, seabed palette and fewer, adapted ocean structures.
+  OceanFloorCompiler.apply(out);
+  OceanStructureCompiler.apply(out, vanilla);
   // 0.9.0: karst cave system. CaveNetworkCompiler remains for history/tests only.
   KarstCaveCompiler.apply(out);
   DefaultWorldCompiler.apply(out);

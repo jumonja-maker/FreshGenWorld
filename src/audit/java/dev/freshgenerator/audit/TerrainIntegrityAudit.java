@@ -37,6 +37,9 @@ public final class TerrainIntegrityAudit implements ModInitializer {
         "dirt","grass_block","coarse_dirt","rooted_dirt","podzol","mycelium","gravel","sand","red_sand","sandstone","red_sandstone",
         "clay","terracotta","mud","packed_mud","smooth_basalt","amethyst_block","budding_amethyst",
         "sculk","sculk_catalyst","moss_block","dripstone_block","basalt","polished_basalt","blackstone",
+        // 26.3 sulfur caves palette: native host rock, not decoration (otherwise deepslate
+        // lenses inside cinnabar were reported as detached rock).
+        "cinnabar","sulfur",
         "infested_stone","infested_deepslate","infested_cobblestone","infested_stone_bricks",
         "infested_mossy_stone_bricks","infested_chiseled_stone_bricks","infested_cracked_stone_bricks");
     private final Map<String,DensitySampler> samplers=new LinkedHashMap<>();

@@ -32,7 +32,7 @@ abstract class CaveCarverMixin {
   var generator=(NoiseBasedChunkGenerator)(Object)this;
   if(generator.generatorSettings().unwrapKey().map(k->k.identifier().toString()).orElse("").equals(CaveAccessModel.SETTINGS)) {
    if(generator.generatorSettings().value().debugFunctions().functions().stream()
-      .anyMatch(e->e.label().equals("FG caves disabled")))return false;
+      .anyMatch(e->e.label().equals(dev.freshgenerator.core.KarstModel.NATIVE_CARVERS_OFF)))return false;
    String id=definition.unwrapKey().map(k->k.identifier().toString()).orElse("");
    if(id.equals("minecraft:cave")||id.equals("minecraft:cave_extra_underground")||id.equals("minecraft:canyon")) {
     var guard=shared.get();if(guard==null){guard=new CaveCarverGuard(generator.generatorSettings().value(),state,target);shared.set(guard);}

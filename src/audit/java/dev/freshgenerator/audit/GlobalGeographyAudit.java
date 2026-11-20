@@ -59,6 +59,28 @@ public final class GlobalGeographyAudit implements ModInitializer {
         var result=new LinkedHashMap<String,Object>();result.put("name",name);result.put("origin_xz",List.of(x0,z0));result.put("side_samples",side);result.put("step_blocks",step);result.put("columns",cells.length);result.put("biome_counts",count);result.put("sampled_adjacency",edges);result.put("milliseconds",(System.nanoTime()-start)/1e6);result.put("runtime_before",before);result.put("runtime_after",runtime());Files.writeString(Path.of(name+"-summary.json"),G.toJson(result)+"\n");
         System.out.println("GLOBAL_GEOGRAPHY_MAP "+name+" samples="+cells.length+" types="+count.size()+" ms="+result.get("milliseconds"));return result;
     }
+    /** Little-endian: JSON header line, then float32 arrays H,T,M,C,E,W (row-major, z outer),
+     * uint16 biome palette indices and uint8 precipitation ordinals (NONE, RAIN, SNOW). */
+    private Map<String,Object> compactMap(String name,int x0,int z0,int side,int step)throws Exception{
+        long start=System.nanoTime();int n=side*side;float[][] f=new float[6][n];short[] b=new short[n];byte[] pr=new byte[n];
+        var palette=new ArrayList<String>();var index=new HashMap<String,Integer>();var height=fields.get("coherent/height");
+        var pos=new net.minecraft.core.BlockPos.MutableBlockPos();int sea=level.getSeaLevel();
+        for(int iz=0;iz<side;iz++)for(int ix=0;ix<side;ix++){int x=x0+ix*step,z=z0+iz*step,i=iz*side+ix;
+            float h=height.sampleValue(context,x,0,z);int y=(int)Math.ceil(h)-1,qx=Math.floorDiv(x,4),qy=Math.floorDiv(y,4),qz=Math.floorDiv(z,4);
+            Holder<Biome> holder=resolver.getNoiseBiome(qx,qy,qz);String id=id(holder);
+            b[i]=(short)(int)index.computeIfAbsent(id,s->{palette.add(s);return palette.size()-1;});
+            var t=climate.sample(qx,qy,qz);f[0][i]=h;f[1][i]=(float)u(t.temperature());f[2][i]=(float)u(t.humidity());
+            f[3][i]=(float)u(t.continentalness());f[4][i]=(float)u(t.erosion());f[5][i]=(float)u(t.weirdness());
+            pos.set(x,Math.max(y+1,sea),z);pr[i]=(byte)holder.value().getPrecipitationAt(pos,sea).ordinal();}
+        var header=new LinkedHashMap<String,Object>();header.put("name",name);header.put("seed",level.getSeed());header.put("origin_xz",List.of(x0,z0));
+        header.put("side",side);header.put("step",step);header.put("fields",List.of("H","T","M","C","E","W"));header.put("palette",palette);header.put("precipitation",List.of("NONE","RAIN","SNOW"));
+        try(var out=new java.io.BufferedOutputStream(Files.newOutputStream(Path.of(name+".bin")))){
+            out.write((new Gson().toJson(header)+"\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            var buf=java.nio.ByteBuffer.allocate(n*4).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            for(float[] a:f){buf.clear();for(float v:a)buf.putFloat(v);out.write(buf.array(),0,n*4);}
+            var sb=java.nio.ByteBuffer.allocate(n*2).order(java.nio.ByteOrder.LITTLE_ENDIAN);for(short s:b)sb.putShort(s);out.write(sb.array());out.write(pr);}
+        header.put("milliseconds",(System.nanoTime()-start)/1e6);System.out.println("GLOBAL_GEOGRAPHY_COMPACT "+name+" samples="+n+" types="+palette.size()+" ms="+header.get("milliseconds"));return header;
+    }
     private void inventory(MinecraftServer server)throws Exception{
         List<String> all=server.registryAccess().lookupOrThrow(Registries.BIOME).listElements().map(GlobalGeographyAudit::id).sorted().toList();
         var entries=new ArrayList<Object>();var declared=new TreeSet<String>();var reachable=new TreeMap<String,Object>();int tested=0;
@@ -102,6 +124,16 @@ public final class GlobalGeographyAudit implements ModInitializer {
             row.put("biome_block",id(manager.getBiome(new net.minecraft.core.BlockPos(x,y,z))));
             row.put("biome_noise",id(resolver.getNoiseBiome(Math.floorDiv(x,4),Math.floorDiv(y,4),Math.floorDiv(z,4))));
             for(String f:List.of("temperature","landscape/climate/surface_temperature","vegetation","continents","erosion","ridges"))row.put(f,value(f,x,z));
+            // Optional extra Y-independent density fields (diagnostics only, e.g. landscape components).
+            String extra=System.getenv("FG_GEO_EXTRA_FIELDS");
+            if(extra!=null)for(String f:extra.split(",")){var key=ResourceKey.create(Registries.DENSITY_FUNCTION,Identifier.parse(P+f.trim()));
+                registry.get(key).ifPresent(fn->row.put(f.trim(),state.getSampler(fn.value()).sampleValue(context,x,0,z)));}
+            // Optional 3-D samples of named fields at an explicit Y (diagnostics only).
+            if(p.has("y")&&p.has("fields")){int yy=p.get("y").getAsInt();var values=new LinkedHashMap<String,Object>();
+                for(var f:p.getAsJsonArray("fields")){String name=f.getAsString();
+                    registry.get(ResourceKey.create(Registries.DENSITY_FUNCTION,Identifier.parse(P+name)))
+                        .ifPresent(fn->values.put(name,state.getSampler(fn.value()).sampleValue(context,x,yy,z)));}
+                row.put("y",yy);row.put("values",values);}
             var t=climate.sample(Math.floorDiv(x,4),Math.floorDiv(y,4),Math.floorDiv(z,4));row.put("climate",target(t));
             if(p.has("y0")){int y0=p.get("y0").getAsInt(),y1=p.get("y1").getAsInt();int negative=0,run=0,best=0;
                 for(int yy=y0;yy<=y1;yy++){double d=body.sampleValue(context,x,yy,z);if(d<0){negative++;run++;best=Math.max(best,run);}else run=0;}
@@ -111,8 +143,29 @@ public final class GlobalGeographyAudit implements ModInitializer {
     }
     private void run(MinecraftServer server)throws Exception{
         level=server.overworld();var gen=(NoiseBasedChunkGenerator)level.getChunkSource().getGenerator();if(!gen.generatorSettings().unwrapKey().orElseThrow().identifier().toString().equals("freshgenerator:highlands_v2"))throw new AssertionError("Wrong generator");var state=level.getChunkSource().randomState();var registry=server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION);for(String name:FIELDS)fields.put(name,state.getSampler(registry.getOrThrow(ResourceKey.create(Registries.DENSITY_FUNCTION,Identifier.parse(P+name))).value()));climate=state.createClimateSampler(context);parameters=parameters((MultiNoiseBiomeSource)gen.getBiomeSource());resolver=MultiNoiseBiomeSource.createFromList(new Climate.ParameterList<>(List.copyOf(parameters.values()))).createResolver(climate);inventory(server);exactFitness();
+        String locate=System.getenv("FG_GEO_LOCATE");
+        if(locate!=null){
+            // Diagnostics: nearest generated structures of one id around given origins ("id;x,z;x,z").
+            String[] parts=locate.split(";");var structures=level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+            var holder=structures.getOrThrow(ResourceKey.create(Registries.STRUCTURE,Identifier.parse(parts[0])));
+            var found=new ArrayList<Object>();
+            for(int i=1;i<parts.length;i++){String[] xz=parts[i].split(",");
+                var hit=level.getChunkSource().getGenerator().findNearestMapStructure(level,net.minecraft.core.HolderSet.direct(holder),
+                    new net.minecraft.core.BlockPos(Integer.parseInt(xz[0]),64,Integer.parseInt(xz[1])),64,false);
+                if(hit!=null)found.add(Map.of("x",hit.getFirst().getX(),"z",hit.getFirst().getZ(),"from",parts[i]));}
+            Files.writeString(Path.of("located.json"),G.toJson(Map.of("structure",parts[0],"found",found))+"\n");
+            Files.writeString(Path.of("global-geography.json"),G.toJson(Map.of("seed",level.getSeed(),"maps",List.of()))+"\n");
+            System.out.println("GLOBAL_GEOGRAPHY_PASS locate");return;
+        }
         String pointsPath=System.getenv("FG_GEO_POINTS");
         if(pointsPath!=null){probePoints(gen,state,Path.of(pointsPath));Files.writeString(Path.of("global-geography.json"),G.toJson(Map.of("seed",level.getSeed(),"maps",List.of()))+"\n");System.out.println("GLOBAL_GEOGRAPHY_PASS points");return;}
+        // Compact rasters for biome-map audits: "name:x0:z0:side:step;..." (surface quart biome,
+        // lookup climate and native precipitation per sample), written as <name>.bin.
+        String compact=System.getenv("FG_GEO_MAPS");
+        if(compact!=null){var done=new ArrayList<Object>();for(String spec:compact.split(";")){String[] q=spec.split(":");
+                done.add(compactMap(q[0],Integer.parseInt(q[1]),Integer.parseInt(q[2]),Integer.parseInt(q[3]),Integer.parseInt(q[4])));}
+            Files.writeString(Path.of("global-geography.json"),G.toJson(Map.of("seed",level.getSeed(),"maps",List.of(),"compact_maps",done))+"\n");
+            System.out.println("GLOBAL_GEOGRAPHY_PASS compact");return;}
         String refinement=System.getenv("FG_GEO_REFINE_SITES");if(refinement!=null){var selected=refineSites(Path.of(refinement));Files.writeString(Path.of("global-geography.json"),G.toJson(Map.of("seed",level.getSeed(),"maps",List.of(),"refined_sites",selected.size(),"runtime_final",runtime()))+"\n");System.out.println("GLOBAL_GEOGRAPHY_PASS refined="+selected.size());return;}
         var maps=new ArrayList<Object>();maps.add(map("coarse",-65536,-65536,256,512));maps.add(map("regional",-3072,-3072,192,32));maps.add(map("local-origin",-256,-256,128,4));
         // A second fixed distant raster prevents the origin alone defining local topology.

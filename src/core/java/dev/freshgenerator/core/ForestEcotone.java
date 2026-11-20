@@ -9,6 +9,8 @@ import java.util.*;
 public final class ForestEcotone {
     private ForestEcotone() { }
     public static final int GRID=16, RADIUS=32, MAX_PROPOSALS=64;
+    /** Own share when the stencil holds no compatible forest at all (limit of zero support). */
+    public static final double EMPTY_SHARE=1e-9;
     public record Pool(String biome,double capacity) {
         public Pool {Objects.requireNonNull(biome);if(!Double.isFinite(capacity)||capacity<=0||capacity>MAX_PROPOSALS)throw new IllegalArgumentException("Invalid native tree capacity");}
     }
@@ -68,7 +70,11 @@ public final class ForestEcotone {
                 weights.merge(pool,weight,Double::sum);total+=weight;
             }
         }
-        if(weights.isEmpty())return List.of(new Share(own,1));
+        // 0.9.1 audit R4 (F-1): no compatible forest anywhere in the stencil is the limit of a
+        // vanishing forest weight, not a full forest. The former share of 1 jumped from 0.011%
+        // to 79% retention between neighbouring columns. A negligible own share keeps the
+        // stature/palette defined while recruitment stays at that limit (about zero).
+        if(weights.isEmpty())return List.of(new Share(own,EMPTY_SHARE));
         double all=total+treeless;
         var result=new ArrayList<Share>();for(var entry:weights.entrySet())result.add(new Share(entry.getKey(),entry.getValue()/all));
         return List.copyOf(result);

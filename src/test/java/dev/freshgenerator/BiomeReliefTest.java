@@ -43,6 +43,10 @@ class BiomeReliefTest {
     }
     @Test void landscapeRootIsTheOldRootPlusReliefAndIsReadOnce() {
         var root = pack.get(BiomeReliefCompiler.path(P + "landscape/height_unguarded")).getAsJsonObject().getAsJsonObject("input");
+        // 0.9.1: the ocean floor layer reads the root once in ocean/raw = root + ocean_relief
+        // and chooses a soft ceiling of it on the open ocean.
+        if ("minecraft:range_choice".equals(root.get("type").getAsString()))
+            root = pack.get(BiomeReliefCompiler.path(OceanFloorCompiler.O + "raw")).getAsJsonObject().getAsJsonObject("input").getAsJsonObject("left");
         assertEquals("minecraft:add", root.get("type").getAsString());
         assertEquals(R + "biome_relief", root.get("right").getAsString());
         long reads = pack.values().stream().filter(v -> v.toString().contains("\"" + P + "landscape/height_unguarded\"")).count();
