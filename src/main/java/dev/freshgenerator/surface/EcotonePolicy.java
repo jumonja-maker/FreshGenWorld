@@ -38,9 +38,11 @@ public final class EcotonePolicy {
     public static final Set<String> ALWAYS_SNOW=Set.of("minecraft:snowy_plains","minecraft:snowy_taiga",
         "minecraft:grove","minecraft:snowy_slopes","minecraft:jagged_peaks","minecraft:frozen_peaks");
     // The coastal substrate layer is separate from terrestrial vegetation.
-    // Warm coral water, rivers, wetlands and special palettes retain native rules.
+    // Rivers, wetlands and special palettes retain native rules. Audit R8 OI-01: warm_ocean was
+    // left out ("warm coral water stays native"), but the 0.9.1 seabed rule covers it, so equal
+    // ground across the lukewarm/warm boundary got coast sand on one side and seabed clay on the other.
     public static final Set<String> COASTS=Set.of("minecraft:beach","minecraft:snowy_beach","minecraft:stony_shore",
-        "minecraft:ocean","minecraft:cold_ocean","minecraft:frozen_ocean","minecraft:lukewarm_ocean",
+        "minecraft:ocean","minecraft:cold_ocean","minecraft:frozen_ocean","minecraft:lukewarm_ocean","minecraft:warm_ocean",
         "minecraft:deep_ocean","minecraft:deep_cold_ocean","minecraft:deep_frozen_ocean","minecraft:deep_lukewarm_ocean");
     public static final Set<String> FOREST_FLOORS=Set.of("minecraft:forest","minecraft:flower_forest",
         "minecraft:birch_forest","minecraft:old_growth_birch_forest","minecraft:taiga",

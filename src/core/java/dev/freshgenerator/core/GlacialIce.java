@@ -130,6 +130,24 @@ public final class GlacialIce {
         if(crack>0)snow=0;
         return new LandColumn(thickness,snow,crack,moraine,coverage);
     }
+    /** Snow depth of a land column without a crevasse (the land profile zeroes it where a crevasse
+     * opens). Audit R8 OI-03: a caller that removes the crevasse restores this depth. */
+    public static int baseSnow(LandSite site) {
+        Objects.requireNonNull(site);
+        double cold=smooth(.50,.90,site.coldness()),strain=smooth(.12,.75,site.slope());
+        return Math.max(1,Math.min(4,1+(int)Math.floor(3*cold*(1-.6*strain))));
+    }
+    /** Share of the land potential that comes from the broad ice cap rather than a valley tongue
+     * (0..1). Audit R8 OI-02: a cap stands on its plateau, so the valley-fill limit must not apply to it. */
+    public static double capShare(LandSite site) {
+        Objects.requireNonNull(site);
+        double cold=smooth(.50,.90,site.coldness()),high=smooth(115,185,site.height());
+        double shelter=smooth(-.6,1.8,site.concavity());
+        double supply=.15+.85*site.uphillSnowSupply();
+        double tongue=cold*high*supply*(.25+.75*shelter);
+        double cap=.72*smooth(.82,.98,site.coldness())*smooth(195,270,site.height())*(1-smooth(.35,.90,site.slope()));
+        return cap<=0?0:smooth(0,1,(cap-tongue)/Math.max(1e-9,cap)*4);
+    }
     private static void unitInput(double v){if(!Double.isFinite(v)||v<0||v>1)throw new IllegalArgumentException("Expected suitability 0..1");}
     private static double smooth(double a,double b,double v){double t=Math.max(0,Math.min(1,(v-a)/(b-a)));return Math.clamp(t*t*t*(t*(t*6-15)+10),0,1);}
     private static long hash(long seed,int x,int z){long v=seed+x*0x9E3779B97F4A7C15L+z*0xD1B54A32D192ED03L;v=(v^(v>>>30))*0xBF58476D1CE4E5B9L;v=(v^(v>>>27))*0x94D049BB133111EBL;return v^(v>>>31);}

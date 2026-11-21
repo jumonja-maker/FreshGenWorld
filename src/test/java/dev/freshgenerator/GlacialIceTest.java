@@ -144,6 +144,17 @@ class GlacialIceTest {
             if(rotation==0)assertTrue(xEnergy>zEnergy*2);else assertTrue(zEnergy>xEnergy*2);
         }
     }
+    @Test void capShareAndBaseSnowSupportTheCallerLimits(){
+        // Audit R8 OI-02: a flat cold plateau is a cap, a supplied sheltered valley a tongue.
+        var plateau=new GlacialIce.LandSite(250,0,0,1,0);
+        assertTrue(GlacialIce.capShare(plateau)>.99,"flat plateau is an ice cap");
+        assertEquals(0,GlacialIce.capShare(new GlacialIce.LandSite(170,.3,1.8,.94,.95)),1e-9,"low valley tongue (no cap branch)");
+        // Audit R8 OI-03: where no crevasse opens, the restored snow is exactly the profile snow.
+        for(int x=-300;x<300;x++){
+            var site=new GlacialIce.LandSite(225,.3,1.8,.94,.95);var c=GlacialIce.land(42,x,31,site);
+            if(c.thickness()>0&&c.crevasseDepth()==0)assertEquals(c.snowDepth(),GlacialIce.baseSnow(site));
+        }
+    }
     @Test void invalidPhysicalInputsAreRejected(){
         assertThrows(IllegalArgumentException.class,()->GlacialIce.ocean(1,0,0,63,-64,Double.NaN));
         assertThrows(IllegalArgumentException.class,()->GlacialIce.ocean(1,0,0,63,-64,1.1));

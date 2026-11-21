@@ -35,8 +35,36 @@ class HighlandClimateTest {
         return KarstCaveTest.eval(new JsonPrimitive(C + "boreal_moisture"), v);
     }
     static double coastErosion(double t, double c, double e) {
-        var v = new HashMap<String, Double>(Map.of(C + "surface_temperature", t, C + "surface_continents", c, C + "biome_erosion", e));
+        var v = new HashMap<String, Double>(Map.of(C + "surface_temperature", t, C + "surface_continents", c, C + "biome_erosion", e, P + "erosion", e));
         return KarstCaveTest.eval(new JsonPrimitive(C + "coast_erosion"), v);
+    }
+    /** Lookup erosion from the raw erosion at height h (the 0.9.0 wetland cap applied first). */
+    static double lookupErosion(double t, double raw, double h) {
+        var v = new HashMap<String, Double>(Map.of(C + "surface_temperature", t, C + "surface_continents", .4, P + "erosion", raw, P + "coherent/height", h));
+        return KarstCaveTest.eval(new JsonPrimitive(C + "coast_erosion"), v);
+    }
+    @Test void frozenHighlandsAreNotHeldInTheWindsweptRow() {
+        // Audit R7 BIO-01: seed 1, X-5984 Z-7872 - T -0.87, raw erosion 0.83, H116 gave windswept (RAIN).
+        assertTrue(lookupErosion(-.8703, .8283, 116) > .55, "frozen high ground reaches the snowy_plains row");
+        for (double raw = .6; raw <= 1; raw += .05) {
+            assertEquals(raw, lookupErosion(-.6, raw, 120), 1e-9, "frozen: native erosion");
+            assertEquals(ClimateNicheCompiler.CAPPED_E, lookupErosion(-.40, raw, 120), 1e-9, "swamp rows (T >= -0.45) stay capped");
+            assertEquals(ClimateNicheCompiler.CAPPED_E, lookupErosion(.1, raw, 120), 1e-9, "temperate highland swamps stay capped");
+            for (double t = -.47; t <= -.452; t += .002) {
+                double e = lookupErosion(t, raw, 120);
+                assertTrue(e >= .55 - 1e-9 && e <= Math.max(raw, .67) + 1e-9, "frozen: released, never in the windswept row t=" + t + ": " + e);
+            }
+        }
+        for (double raw = -1; raw < .45; raw += .05) assertEquals(raw, lookupErosion(-.8, raw, 120), 1e-9, "uncapped erosion untouched");
+    }
+    @Test void frozenLandIsNeverInTheWindsweptRow() {
+        // World 0911 (seed -8283299496428459970, X-57 Z127): T -0.538, E 0.531, H116 gave windswept_forest (grass, rain).
+        for (double t : new double[]{-1, -.8, -.538, -.46, -.4502}) for (double raw = .45; raw <= .55001; raw += .005)
+            for (double h : new double[]{65, 116, 160}) {
+                double e = lookupErosion(t, raw, h);
+                assertTrue(e > .5502, "frozen erosion leaves the windswept row (0.55 inclusive) t=" + t + " raw=" + raw + " h=" + h + ": " + e);
+            }
+        for (double raw = .45; raw < .55; raw += .01) assertEquals(raw, lookupErosion(-.3, raw, 65), 1e-9, "cold (taiga) band keeps windswept forest");
     }
     @Test void forestReachesTheSnowyPlainThroughTaiga() {
         // Audit R5: native humidity bands plains < -0.1 <= forest < 0.1 <= taiga < 0.3.
@@ -60,11 +88,21 @@ class HighlandClimateTest {
             assertEquals(e, coastErosion(-.82, .2, e), 1e-9, "inland cold erosion (peaks, slopes) untouched");
             assertEquals(e, coastErosion(-.82, -.4, e), 1e-9, "the ocean untouched");
         }
-        for (double e = -.2; e <= 1; e += .1) assertEquals(e, coastErosion(-.82, -.12, e), 1e-9, "never lowered");
+        for (double e = -.2; e <= 1; e += .1) {
+            if (e >= .45 - 1e-9 && e < .55) assertTrue(coastErosion(-.82, -.12, e) >= .55, "frozen windswept row moved up");
+            else assertEquals(e, coastErosion(-.82, -.12, e), 1e-9, "never lowered");
+        }
     }
     static double frozenM(double t, double m) {
         var v = new HashMap<String, Double>(Map.of(C + "surface_temperature", t, C + "boreal_moisture", m));
         return KarstCaveTest.eval(new JsonPrimitive(C + "frozen_moisture"), v);
+    }
+    @Test void frozenColumnRulesReachTheColumnEdge() {
+        // Own audit 21.11: rainy taiga at T -0.4525 (seed 20261119, X-7808 Z-5264) and stony shore at T -0.5225 (seed 1, X320 Z-6976).
+        for (double t = -.47; t < -.45; t += .0005) {
+            for (double m = .3; m <= 1; m += .05) assertTrue(frozenM(t, m) <= .3, "frozen humidity stays below the rainy-taiga column t=" + t);
+            for (double e = -1; e < -.2; e += .05) assertTrue(coastErosion(t, -.12, e) > -.2225, "no stony shore in the frozen column t=" + t + " e=" + e);
+        }
     }
     @Test void frozenHumidPlacesAreSnowyTaigaNotRainyTaiga() {
         for (double m = -1; m <= 1; m += .05) {

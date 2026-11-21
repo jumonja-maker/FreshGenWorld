@@ -17,6 +17,8 @@ import net.minecraft.world.level.levelgen.carver.WorldCarver;
 import net.minecraft.world.level.levelgen.material.rule.MaterialRule;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** The active current world opts out of all native caves. Hidden historical
  * settings without that marker retain their published carver roof and RNG calls.
@@ -24,6 +26,19 @@ import org.spongepowered.asm.mixin.injection.At;
  */
 @Mixin(NoiseBasedChunkGenerator.class)
 abstract class CaveCarverMixin {
+ /** In the current world every native carver is refused (see below), so the carver stage only
+  * looked up the biomes of about 17x17 neighbouring chunks and discarded the result: its local
+  * carving mask stays empty and is never applied. Each lookup evaluates the full climate graph
+  * (which reads the landscape height), about 85% of the chunk generation time in the 0.9.1
+  * profile. The stage is skipped there; generated blocks, biomes and heightmaps are unchanged. */
+ @Inject(method="generateCarvers",at=@At("HEAD"),cancellable=true,require=1)
+ private void freshgenerator$skipDisabledCarvers(ChunkAccess chunk,Blender blender,NoiseChunk noise,RandomState state,
+   BiomeManager biomes,WorldGenRegion region,MaterialRule materials,CallbackInfo ci) {
+  var settings=((NoiseBasedChunkGenerator)(Object)this).generatorSettings();
+  if(settings.unwrapKey().map(k->k.identifier().toString()).orElse("").equals(CaveAccessModel.SETTINGS)
+     &&settings.value().debugFunctions().functions().stream().anyMatch(e->e.label().equals(dev.freshgenerator.core.KarstModel.NATIVE_CARVERS_OFF)))
+   ci.cancel();
+ }
  @WrapOperation(method="generateCarvers",at=@At(value="INVOKE",target="Lnet/minecraft/world/level/levelgen/carver/WorldCarver;carve(Lnet/minecraft/world/level/levelgen/WorldGenerationContext;Lnet/minecraft/util/RandomSource;Lnet/minecraft/world/level/ChunkPos;Lnet/minecraft/world/level/ChunkPos;Lnet/minecraft/world/level/chunk/CarverOutput;)Z"),require=1)
  private boolean freshgenerator$surfaceAccess(WorldCarver carver,WorldGenerationContext generation,RandomSource random,
    ChunkPos target,ChunkPos source,CarverOutput output,Operation<Boolean> original,

@@ -9,7 +9,6 @@ import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkGenerator;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 
 /** 0.9.1: per-decoration-pass ocean community filter for the FreshGenerator world only.
@@ -31,13 +30,18 @@ public final class OceanEnvironment {
         var community = OceanEcology.community(configuredFeature);
         if (community == OceanEcology.Community.NONE) return true;
         int x = at.getX(), z = at.getZ();
-        int top = level.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, x, z);
+        // Audit R8 D-03: judge the candidate where it is placed. The native placement already put it
+        // on the current floor (OCEAN_FLOOR heightmap for seagrass, kelp and pickles); the worldgen
+        // heightmap is not updated after the terrain stage, so a structure or reef on the floor
+        // made it read 0 water, and 0 used to pass the filter unchecked.
+        int top = at.getY();
         // The real water column above the floor, wherever its surface is (0.9.1 audit E1:
         // depth from the sea level misjudged rivers, lakes and swamps above or below it).
         int depth = 0;
         var cursor = new BlockPos.MutableBlockPos(x, top, z);
         while (depth < 64 && level.getFluidState(cursor).is(FluidTags.WATER)) { depth++; cursor.move(0, 1, 0); }
-        if (depth <= 0) return true;
+        // No water at the candidate: a sea plant cannot grow there (the native feature would fail too).
+        if (depth <= 0) return false;
         var ground = ground(level.getBlockState(new BlockPos(x, top - 1, z)));
         double patch = EcotoneModel.noise(seed ^ 0x6B3E1F5AL, x / 56.0, z / 56.0);
         double keep = OceanEcology.suitability(community, depth, ground, patch);

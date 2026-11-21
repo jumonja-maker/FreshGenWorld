@@ -39,9 +39,10 @@ class ClimateNicheTest {
         var router = pack.get(ClimateNicheCompiler.SETTINGS).getAsJsonObject().getAsJsonObject("noise_router");
         // 0.9.1 (audit R5) wraps the 0.9.0 lookup erosion with a cold-coast floor; it still reads it.
         // ... and the snow massif altitude belts wrap that again (lookup only).
-        assertEquals(SnowMassifCompiler.M + "belt_erosion", router.get("erosion").getAsString());
+        assertEquals(SnowMassifCompiler.M + "routed_erosion", router.get("erosion").getAsString());
         assertTrue(pack.get(ClimateNicheCompiler.path(SnowMassifCompiler.M + "belt_erosion")).toString().contains("\"" + C + "coast_erosion\""));
-        assertTrue(pack.get(ClimateNicheCompiler.path(C + "coast_erosion")).toString().contains("\"" + C + "biome_erosion\""));
+        assertTrue(pack.get(ClimateNicheCompiler.path(C + "coast_erosion")).toString().contains("\"" + C + "frozen_windswept\""));
+        assertTrue(pack.get(ClimateNicheCompiler.path(C + "frozen_erosion")).toString().contains("\"" + C + "biome_erosion\""));
         assertEquals(P + "regions/biome_temperature", router.get("temperature").getAsString());
         // 0.9.1 (audit R4) wraps the 0.9.0 lookup humidity with a highland floor; it still reads it.
         assertEquals(C + "frozen_moisture", pack.get(ClimateNicheCompiler.path(P + "regions/biome_vegetation")).getAsJsonObject().get("first").getAsString());

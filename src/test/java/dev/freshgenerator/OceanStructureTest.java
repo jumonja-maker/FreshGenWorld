@@ -31,6 +31,15 @@ class OceanStructureTest {
             double ratio = Math.pow(e.getValue()[0] / p.get("spacing").getAsDouble(), 2);
             assertTrue(ratio < .5, e.getKey() + " keeps at most half the native count: " + ratio);
         }
+        // Audit R7: native monument pillars reached a shipwreck's fence; wrecks and ruins keep clear of monuments.
+        for (String s : List.of("shipwrecks", "ocean_ruins")) {
+            var zone = pack.get("data/minecraft/worldgen/structure_set/" + s + ".json").getAsJsonObject()
+                    .getAsJsonObject("placement").getAsJsonObject("exclusion_zone");
+            assertEquals("minecraft:ocean_monuments", zone.get("other_set").getAsString(), s);
+            assertTrue(zone.get("chunk_count").getAsInt() >= 3 && zone.get("chunk_count").getAsInt() <= 16, s + " covers the monument");
+        }
+        assertFalse(pack.get("data/minecraft/worldgen/structure_set/ocean_monuments.json").getAsJsonObject()
+                .getAsJsonObject("placement").has("exclusion_zone"), "monuments keep their native placement");
         // Audit R4: the native monument (foundation pillars to the real floor) is kept.
         assertFalse(pack.containsKey("data/minecraft/worldgen/structure/monument.json"), "monument stays native");
     }

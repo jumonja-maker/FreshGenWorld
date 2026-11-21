@@ -135,6 +135,9 @@ public final class ForestEnvironment {
     }
     public boolean retain(PlacedFeature feature,BlockPos at) {
         if(!features.contains(feature)&&!understory.containsKey(feature))return true;
+        // Own audit 21.11: snowy-biome trees ("on snow" placements put soil on snow) grew on glacier ice.
+        // Glaciers exist only where the model height is at least 115, so lower candidates skip the block reads.
+        if(at.getY()>GLACIER_MIN_Y&&features.contains(feature)&&onGlacier(at))return false;
         String id=biomes.getBiome(at.getX(),at.getY(),at.getZ()).unwrapKey().map(k->k.identifier().toString()).orElse("");
         var family=family(id);int x=at.getX(),z=at.getZ();float h=height(x,z);
         boolean budget=proposalBudgets.containsKey(feature);
@@ -286,6 +289,19 @@ public final class ForestEnvironment {
     }
     /** Forest floor at the estimated envelope, or the actual generated surface here
      * (village grading or glacial ice can move it outside the envelope). */
+    /** Land glaciers start at model height 115 (GlacialSurface); their ice is above that. */
+    private static final int GLACIER_MIN_Y=115;
+    /** Glacier ice (packed or blue ice) under the candidate, through at most its snow and moraine cover. */
+    private boolean onGlacier(BlockPos at){
+        var p=new BlockPos.MutableBlockPos(at.getX(),at.getY()-1,at.getZ());
+        for(int i=0;i<6;i++,p.move(0,-1,0)){
+            var s=region.getBlockState(p);
+            if(s.is(net.minecraft.world.level.block.Blocks.PACKED_ICE)||s.is(net.minecraft.world.level.block.Blocks.BLUE_ICE))return true;
+            if(!(s.isAir()||s.is(net.minecraft.world.level.block.Blocks.SNOW)||s.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK)
+                ||s.is(net.minecraft.world.level.block.Blocks.POWDER_SNOW)||s.is(net.minecraft.world.level.block.Blocks.GRAVEL)))return false;
+        }
+        return false;
+    }
     private boolean natural(BlockPos at,float h){
         if(at.getY()>=h-6&&at.getY()<=h+8)return true;
         return Math.abs(at.getY()-region.getHeight(Heightmap.Types.OCEAN_FLOOR_WG,at.getX(),at.getZ()))<=1;

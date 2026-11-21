@@ -24,6 +24,8 @@ import java.util.*;
 public final class GlacialSurface {
     private GlacialSurface() { }
     private static final ThreadLocal<Boolean> ACTIVE=ThreadLocal.withInitial(()->false);
+    /** Ice cap above the valley-fill limit (audit R8 OI-02): extra blocks at most, and the highest cap top. */
+    static final int CAP_ROOM=12,CAP_TOP=306;
     private static final Set<String> OCEANS=Set.of("minecraft:frozen_ocean","minecraft:deep_frozen_ocean",
         "minecraft:cold_ocean","minecraft:deep_cold_ocean");
     public static boolean begin(){boolean previous=ACTIVE.get();ACTIVE.set(true);return previous;}
@@ -50,19 +52,20 @@ public final class GlacialSurface {
             }else if(h>=115){
                 var ice=environment.land(x,z);
                 if(ice.thickness()==0)continue;
-                int bed=(int)Math.floor(h),top=Math.min(chunk.getMaxY()-1,bed+ice.thickness()-ice.crevasseDepth());
-                // A glacier cannot bridge an exposed cave mouth or be planted on
-                // a floating snow layer. Its basal rock must already exist.
-                at.set(x,bed,z);
-                if(!basalSolid(chunk.getBlockState(at)))continue;
+                // Own audit 21.11: the bed is the real top of the column, not the model height. On slopes
+                // the mountain surface detail lifts the real ground several blocks above the model, and ice
+                // written from the model height up replaced rock and soil inside the slope (snow and ice lenses
+                // under stone, seen in cliff faces). A glacier cannot bridge an exposed cave mouth or be planted
+                // on a floating snow layer: without a solid top near the model height there is no glacier.
+                int bed=surfaceTop(chunk,x,z,(int)Math.floor(h),at);
+                if(bed==Integer.MIN_VALUE)continue;
+                int top=Math.min(chunk.getMaxY()-1,bed+ice.thickness()-ice.crevasseDepth());
                 // Preserve the existing bed and every cave roof below it.
-                // Glacial ice accumulates above rock; it is not a replacement
-                // material for the last solid slab over an old cavity.
+                // Glacial ice accumulates above the ground; it never replaces ground blocks.
                 int bottom=bed+1;
                 for(int y=bottom;y<=top;y++){
                     at.set(x,y,z);BlockState old=chunk.getBlockState(at);
-                    // Retain ores and other non-terrain blocks in the foundation.
-                    if(!landReplaceable(old))continue;
+                    if(!old.isAir()&&!old.is(Blocks.SNOW))continue;
                     BlockState next=y==top&&ice.moraine()?Blocks.GRAVEL.defaultBlockState():
                         y>top-ice.snowDepth()?Blocks.SNOW_BLOCK.defaultBlockState():
                         y<bed+ice.thickness()/2||ice.crevasseDepth()>0?Blocks.BLUE_ICE.defaultBlockState():Blocks.PACKED_ICE.defaultBlockState();
@@ -74,11 +77,15 @@ public final class GlacialSurface {
     }
     private static boolean oceanReplaceable(BlockState s){return s.isAir()||s.getFluidState().is(FluidTags.WATER)
         ||s.is(Blocks.ICE)||s.is(Blocks.PACKED_ICE)||s.is(Blocks.BLUE_ICE)||s.is(Blocks.SNOW_BLOCK)||s.is(Blocks.SNOW);}
-    private static boolean ground(BlockState s){return s.is(Blocks.STONE)||s.is(Blocks.DEEPSLATE)||s.is(Blocks.DIRT)
-        ||s.is(Blocks.GRASS_BLOCK)||s.is(Blocks.GRAVEL)||s.is(Blocks.SNOW_BLOCK)||s.is(Blocks.POWDER_SNOW)
-        ||s.is(Blocks.PACKED_ICE)||s.is(Blocks.BLUE_ICE)||s.is(Blocks.ICE)||s.is(Blocks.CALCITE)
-        ||s.is(Blocks.GRANITE)||s.is(Blocks.ANDESITE)||s.is(Blocks.DIORITE)||s.is(Blocks.COARSE_DIRT)||s.is(Blocks.PODZOL);}
-    private static boolean landReplaceable(BlockState s){return s.isAir()||ground(s)||s.is(Blocks.SNOW);}
+    /** Highest basal-solid block of the column within [model-3, model+8], or MIN_VALUE (cave mouth, no ground). */
+    private static int surfaceTop(ChunkAccess chunk,int x,int z,int model,BlockPos.MutableBlockPos at){
+        for(int y=Math.min(chunk.getMaxY()-1,model+8);y>=Math.max(chunk.getMinY(),model-3);y--){
+            at.set(x,y,z);BlockState s=chunk.getBlockState(at);
+            if(s.isAir()||s.is(Blocks.SNOW))continue;
+            return basalSolid(s)?y:Integer.MIN_VALUE;
+        }
+        return Integer.MIN_VALUE;
+    }
     private static boolean basalSolid(BlockState s){return !s.isAir()&&s.getFluidState().isEmpty()&&!s.is(Blocks.SNOW);}
     private static String id(Holder<Biome> b){return b.unwrapKey().map(k->k.identifier().toString()).orElse("");}
     /** Continuous in temperature; independent of the ocean biome ID at the border. */
@@ -142,13 +149,24 @@ public final class GlacialSurface {
             double high=h;
             for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++)if(dx!=0||dz!=0)high=Math.max(high,height(x+dx*48,z+dz*48));
             double supply=smooth(0,45,high-h);
-            var profile=GlacialIce.land(state.seed(),x,z,new GlacialIce.LandSite(h,Math.hypot(gx,gz),concavity,cold,supply,gx,gz));
+            var site=new GlacialIce.LandSite(h,Math.hypot(gx,gz),concavity,cold,supply,gx,gz);
+            var profile=GlacialIce.land(state.seed(),x,z,site);
             // The glacier fills the valley toward a broad free surface; its
             // thickness must not become a separate hill on each local low spot.
-            int thickness=Math.min(profile.thickness(),Math.max(0,(int)Math.floor(surface+3*profile.coverage()-h)));
+            // Audit R8 OI-02: a broad ice cap is not valley fill. On a flat plateau the broad surface
+            // equals H, so this limit cut every cap to at most 2 blocks (core thickness up to 26);
+            // the cap share of the profile keeps its own thickness.
+            // The cap gets at most CAP_ROOM extra blocks and its top stays below CAP_TOP: uncapped, a
+            // plateau at H296 carried a 28-block slab up to the build limit (Y314..319).
+            double capRoom=GlacialIce.capShare(site)*Math.min(profile.thickness(),CAP_ROOM);
+            int valley=(int)Math.floor(surface+3*profile.coverage()-h);
+            int limit=Math.max(valley,Math.min((int)Math.floor(valley+capRoom),CAP_TOP-(int)Math.floor(h)));
+            int thickness=Math.min(profile.thickness(),Math.max(0,limit));
             if(thickness==0)return new GlacialIce.LandColumn(0,0,0,false,0);
             int crack=Math.min(profile.crevasseDepth(),Math.max(0,thickness-3));
-            int snow=crack>0?0:Math.min(profile.snowDepth(),thickness);
+            // Audit R8 OI-03: the profile zeroes snow where a crevasse opens; when the limit above
+            // removes the crevasse, the column gets its normal snow back instead of bare ice.
+            int snow=crack>0?0:Math.min(profile.crevasseDepth()>0?GlacialIce.baseSnow(site):profile.snowDepth(),thickness);
             return new GlacialIce.LandColumn(thickness,snow,crack,profile.moraine(),profile.coverage());
         }
         private double broadHeight(int x,int z){

@@ -24,7 +24,11 @@ import java.util.*;
  *     is warm (RAIN at T -0.82, seed -20261119, X7680 Z3392). On cold coasts the lookup erosion
  *     gets a floor in the beach band, so the native table picks snowy_beach (SNOW). Coast
  *     materials stay with the coast rule (rock on steep shores).</li>
- * </ul> */
+ * </ul>
+ * <p>Audit R7 (BIO-01): the 0.9.0 wetland cap (lookup erosion at most 0.54 above H72, against highland
+ * swamps) also held frozen land in the windswept row 0.45..0.55, whose native weather is warm: seed 1,
+ * X-5984 Z-7872, T -0.87, erosion 0.83 gave windswept_gravelly_hills with RAIN and no snow. The native
+ * table has no swamp at T &lt; -0.45, so on frozen ground the cap is released (snowy_plains there). */
 public final class HighlandClimateCompiler {
     public static final String P = CoherentSurfaceCompiler.PREFIX, C = P + "landscape/climate/";
     /** Lookup temperature band of the floor (ramps in from T_IN, full T_FULL..T_HOLD, gone at T_OUT). */
@@ -34,18 +38,28 @@ public final class HighlandClimateCompiler {
     /** Taiga fringe on the dry side (user request 20.11): plains next to the snow line also pass
      * through taiga; full to F_HOLD, gone at F_OUT (a real transition band, not a sliver). */
     public static final double F_HOLD = -.40, F_OUT = -.34;
-    /** Cold coasts: fully at T &lt;= C_T_FULL, gone at C_T_OUT; erosion floor in the native beach band. */
-    public static final double C_T_FULL = -.55, C_T_OUT = -.47, C_EROSION = -.2;
+    /** Cold coasts: fully at T &lt;= C_T_FULL, gone at C_T_OUT; erosion floor in the native beach band.
+     * Own audit 21.11: full over the whole frozen column (up to T -0.45) and fading on the cold side,
+     * where stony_shore is native; fading from T -0.55 left rainy stony shores in the frozen column. */
+    public static final double C_T_FULL = -.4501, C_T_OUT = -.43, C_EROSION = -.2;
     public static final String SETTINGS = SurfaceOnlyCompiler.SETTINGS;
     /** Frozen humid cap (audit R6 BIO-03): below the snow line the native table puts rainy taiga in its
      * wettest column (M &gt; 0.3); the cap keeps such places in the snowy_taiga column. */
     public static final double FROZEN_FULL = -.47, FROZEN_OUT = -.452, FROZEN_CAP = .29;
+    /** The humidity cap covers the whole frozen column (own audit 21.11: fading it out between T -0.47 and
+     * -0.452 left a ring of rainy taiga at the column edge) and fades on the cold side, where the cap only
+     * turns old-growth spruce taiga into taiga. The wetland release keeps FROZEN_FULL/OUT: on the cold side
+     * an erosion above 0.55 is the swamp row. */
+    public static final double MOIST_FULL = -.4501, MOIST_OUT = -.43;
+    /** Native windswept erosion row (its upper edge 0.55 is inclusive in the table) and the upper edge of
+     * the frozen temperature column (-0.45). */
+    public static final double WINDSWEPT_LOW = .45, WINDSWEPT_HIGH = .5501, FROZEN_COLUMN = -.4501;
     /** Surface height band where the floor fades in, and the floor itself (native forest humidity band). */
     public static final double H_LOW = 90, H_HIGH = 110, FLOOR = -.05, CAP = .09;
     public static final Set<String> REPLACED = Set.of(path(P + "regions/biome_vegetation"), SETTINGS);
     public static final Set<String> ADDED = Set.of(path(C + "highland_moisture_floor"), path(C + "highland_moisture"),
             path(C + "highland_moisture_cap"), path(C + "highland_band"), path(C + "boreal_moisture_floor"), path(C + "boreal_fringe_floor"), path(C + "boreal_moisture"), path(C + "cold_coast_floor"), path(C + "coast_erosion"),
-            path(C + "frozen_moisture_cap"), path(C + "frozen_moisture"));
+            path(C + "frozen_moisture_cap"), path(C + "frozen_moisture"), path(C + "frozen_erosion"), path(C + "frozen_windswept"));
     private static final Gson G = new Gson();
     private HighlandClimateCompiler() { }
 
@@ -75,7 +89,7 @@ public final class HighlandClimateCompiler {
                 "right", obj("type", "minecraft:max", "left", C + "boreal_moisture_floor", "right", C + "boreal_fringe_floor"))));
         // Audit R6 (BIO-03): rainy taiga over a snowy beach at T -0.66, M 0.34 (seed 1, X-1920 Z-6464).
         staged.put(path(C + "frozen_moisture_cap"), cache(add(1, mul(FROZEN_CAP - 1,
-                spline(C + "surface_temperature", new double[][]{{FROZEN_FULL, 1, 0}, {FROZEN_OUT, 0, 0}})))));
+                spline(C + "surface_temperature", new double[][]{{MOIST_FULL, 1, 0}, {MOIST_OUT, 0, 0}})))));
         staged.put(path(C + "frozen_moisture"), cache(obj("type", "minecraft:min", "left", C + "boreal_moisture", "right", C + "frozen_moisture_cap")));
         vegetation.addProperty("first", C + "frozen_moisture");
         staged.put(path(P + "regions/biome_vegetation"), vegetation);
@@ -87,10 +101,35 @@ public final class HighlandClimateCompiler {
                 spline(C + "surface_temperature", new double[][]{{C_T_FULL, 1, 0}, {C_T_OUT, 0, 0}}),
                 spline(C + "surface_continents", new double[][]{{-.21, 0, 0}, {-.19, 1, 0}, {-.11, 1, 0}, {-.09, 0, 0}})))),
                 "when_out_of_range", -1.0)));
-        staged.put(path(C + "coast_erosion"), cache(obj("type", "minecraft:range_choice", "input", C + "biome_erosion",
+        // Audit R7 (BIO-01): release the wetland cap on frozen ground. Only capped values (>= 0.54) can
+        // change, so the temperature is read only there; the release is complete at FROZEN_FULL and gone
+        // at FROZEN_OUT, still inside the frozen column (no swamp row below T -0.45).
+        String biomeErosion = C + "biome_erosion";
+        staged.put(path(C + "frozen_erosion"), cache(obj("type", "minecraft:range_choice", "input", biomeErosion,
+                "min_inclusive", ClimateNicheCompiler.CAPPED_E - 1e-3, "max_exclusive", 1.0e6,
+                "when_in_range", obj("type", "minecraft:range_choice", "input", C + "surface_temperature",
+                        "min_inclusive", -1.0e6, "max_exclusive", FROZEN_OUT,
+                        "when_in_range", add(biomeErosion, mul(spline(C + "surface_temperature", new double[][]{{FROZEN_FULL, 1, 0}, {FROZEN_OUT, 0, 0}}),
+                                add(P + "erosion", mul(-1, biomeErosion)))),
+                        "when_out_of_range", biomeErosion),
+                "when_out_of_range", biomeErosion)));
+        // Follow-up (world 0911, seed -8283299496428459970, X-57..-46 Z127): frozen ground with a native
+        // erosion of 0.45..0.55 still got windswept_forest (its own temperature 0.2: grass and rain
+        // up to Y117) inside snowy taiga at T -0.53 and the same height. In the frozen column that row
+        // is moved to the row above it (snowy plains / snowy taiga, as at erosion >= 0.55); only the
+        // erosion band is checked first, the temperature only there.
+        staged.put(path(C + "frozen_windswept"), cache(obj("type", "minecraft:range_choice", "input", C + "frozen_erosion",
+                "min_inclusive", WINDSWEPT_LOW, "max_exclusive", WINDSWEPT_HIGH,
+                "when_in_range", obj("type", "minecraft:range_choice", "input", C + "surface_temperature",
+                        "min_inclusive", -1.0e6, "max_exclusive", FROZEN_COLUMN,
+                        "when_in_range", add(C + "frozen_erosion", WINDSWEPT_HIGH - WINDSWEPT_LOW + .01),
+                        "when_out_of_range", C + "frozen_erosion"),
+                "when_out_of_range", C + "frozen_erosion")));
+        String lookupErosion = C + "frozen_windswept";
+        staged.put(path(C + "coast_erosion"), cache(obj("type", "minecraft:range_choice", "input", lookupErosion,
                 "min_inclusive", -1.0e6, "max_exclusive", C_EROSION,
-                "when_in_range", obj("type", "minecraft:max", "left", C + "biome_erosion", "right", C + "cold_coast_floor"),
-                "when_out_of_range", C + "biome_erosion")));
+                "when_in_range", obj("type", "minecraft:max", "left", lookupErosion, "right", C + "cold_coast_floor"),
+                "when_out_of_range", lookupErosion)));
         JsonObject settings = staged.get(SETTINGS).deepCopy().getAsJsonObject();
         JsonObject router = settings.getAsJsonObject("noise_router");
         if (!router.get("erosion").getAsString().equals(C + "biome_erosion")) throw new IllegalStateException("Unexpected erosion routing");

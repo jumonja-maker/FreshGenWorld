@@ -16,11 +16,21 @@ A world-generation mod for **Minecraft Java 26.3** (Fabric). It reshapes terrain
 2. Download `FreshGenerator-Fabric-26.3-<version>.jar` from the [latest release](https://github.com/jumonja-maker/FreshGenWorld/releases/latest) and put it into the `mods` folder.
 3. Create a new world with the normal **Default** world type: FreshGenerator replaces it, no extra option to pick.
 
-Existing chunks are never rebuilt; new terrain appears only in new chunks. **Start a new world for 0.9.1:** its mountains differ by up to ~180 blocks from 0.9.0 on the same seed, so continuing an old world leaves walls where old and new chunks meet. The mod is alpha: back up your worlds.
+Existing chunks are never rebuilt; new terrain appears only in new chunks. **Start a new world for 0.9.2:** biome borders, snow lines and glaciers changed, so continuing an older world leaves seams where old and new chunks meet. The mod is in beta: back up your worlds.
 
-### What's new in 0.9.1
+### What's new in 0.9.2 (beta)
+- **Much faster generation:** chunks generate about 4–14 times faster. The disabled vanilla cave carvers no longer query the climate of ~289 neighbouring chunks for every chunk; the generated blocks are identical.
+- **Snow line by height:** mountain biomes switch along height contours — snowy slopes from about Y168 and peaks from Y212 (25 blocks lower in cold regions), whatever the local erosion. Snowy slopes and peaks no longer stand next to forest, meadow or cherry groves at the same height, and grove or snowy slopes no longer sit in low valleys.
+- **Warm mountains:** rocky stony peaks from about Y157 with snowy summits above them; a forest never appears above a rocky summit.
+- **Logical frozen regions:** frozen land is snowy plains, snowy taiga or snowy beach right up to the climate border — no more ring of rainy taiga and rainy stony shores along every frozen region, and no green, rainy windswept hills or forests inside snowy taiga.
+- **Glaciers:** ice caps on high cold plateaus keep real thickness (up to ~18 blocks) under snow; glaciers lie on the real ground instead of burying snow and ice inside mountain slopes; no spruces growing on glacier ice; snow cover returns where a crevasse was removed.
+- **Oceans:** shipwrecks and ocean ruins keep clear of monuments; seagrass and kelp check their real water depth next to structures on the floor; no sand/clay seam between lukewarm and warm oceans.
+- **Caves:** surface mountain belts no longer change deep cave biomes (deep dark, sulfur caves); deep caves use the same climate as the native aquifer guard.
+- **Debug screen:** F3 shows `FG lookup E` / `FG lookup W`, the erosion and weirdness the biome table really uses.
+
+### In 0.9.1
 - **Great snow massifs:** large cold regions rise into ranges of varied peaks in their cores; small snowy regions stay hills.
-- **Mountain biomes follow real height** in every mountain: forest and meadow below, snowy slopes and grove above, frozen and jagged peaks on the summits — no more peaks next to forest at the same height.
+- **Mountain biomes follow real height** in every mountain: forest and meadow below, snowy slopes and grove above, frozen and jagged peaks on the summits.
 - **Logical cold transitions:** forests and plains reach snowy plains through a belt of taiga; cold coasts are snowy beaches; very humid frozen land is snowy taiga instead of rainy taiga; cool high plateaus carry montane forest instead of savanna or jungle beside snow.
 - **New oceans:** abyssal basins, trenches, mid-ocean ridges and seamounts; basalt on volcanic ground, clay in basins, sediment several blocks thick; seagrass, kelp and reefs follow light and ground; fewer underwater structures, monuments stand on their native pillars.
 - **Better coasts and giant mountains:** no 80-block sea walls, gentler giant flanks, bare rock instead of soil on near-vertical walls.
@@ -83,7 +93,7 @@ gradle build
 
 If a dependency cannot be resolved, add `--init-script scripts/central-fallback.init.gradle` (the same fallback CI uses). The JAR is written to `build/libs`. The build compiles the worldgen pack (`src/tool`) and runs all Java tests. The `scripts/` folder holds package validators and analysis tools. `src/audit` contains test-only server observers used for native generation audits.
 
-Documentation for every subsystem is in [`docs/`](docs/). Start with [`docs/terrain-repair-0.9.1.md`](docs/terrain-repair-0.9.1.md), [`docs/caves-0.9.0.md`](docs/caves-0.9.0.md) and [`docs/product-direction.md`](docs/product-direction.md).
+Documentation for every subsystem is in [`docs/`](docs/). Start with [`docs/terrain-repair-0.9.1.md`](docs/terrain-repair-0.9.1.md) (covers 0.9.1 and 0.9.2), [`docs/caves-0.9.0.md`](docs/caves-0.9.0.md) and [`docs/product-direction.md`](docs/product-direction.md).
 
 ---
 
@@ -95,11 +105,21 @@ Documentation for every subsystem is in [`docs/`](docs/). Start with [`docs/terr
 2. Скачайте `FreshGenerator-Fabric-26.3-<версия>.jar` из [последнего релиза](https://github.com/jumonja-maker/FreshGenWorld/releases/latest) и положите в папку `mods`.
 3. Создайте новый мир в обычном режиме **«По умолчанию»**: его создаёт FreshGenerator, отдельно выбирать ничего не нужно.
 
-Существующие чанки не перестраиваются: новая генерация появляется только в новых чанках. **Для 0.9.1 создайте новый мир:** горы на том же сиде отличаются от 0.9.0 до ~180 блоков, и в старом мире на стыке старых и новых чанков останутся стены. Мод в стадии alpha, делайте резервные копии миров.
+Существующие чанки не перестраиваются: новая генерация появляется только в новых чанках. **Для 0.9.2 создайте новый мир:** изменились границы биомов, снеговые линии и ледники, и в старом мире на стыке старых и новых чанков останутся швы. Мод в стадии beta, делайте резервные копии миров.
 
-### Что нового в 0.9.1
+### Что нового в 0.9.2 (beta)
+- **Генерация намного быстрее:** чанки создаются примерно в 4–14 раз быстрее. Выключенные ванильные карверы пещер больше не опрашивают климат ~289 соседних чанков на каждый чанк; блоки мира те же самые.
+- **Снеговая линия по высоте:** горные биомы меняются по изолиниям высоты — снежные склоны примерно с Y168, пики с Y212 (в холодных регионах на 25 блоков ниже) при любой эрозии. Снежные склоны и пики больше не стоят рядом с лесом, лугом или вишнёвой рощей на той же высоте, а снежный ельник и снежные склоны — в низких долинах.
+- **Тёплые горы:** каменистые пики примерно с Y157, выше — снежные вершины; лес выше скальной вершины не появляется.
+- **Логичные морозные регионы:** морозная земля — снежная равнина, снежная тайга или снежный пляж до самой климатической границы: больше нет кольца дождливой тайги и дождливых каменистых берегов вокруг каждого морозного региона и зелёных дождливых ветреных холмов и лесов посреди снежной тайги.
+- **Ледники:** ледниковые шапки на высоких холодных плато получают настоящую толщину (до ~18 блоков) под снегом; ледники лежат на настоящей поверхности, а не замуровывают снег и лёд внутрь горных склонов; ели на льду ледника не растут; снег возвращается туда, где убиралась трещина.
+- **Океаны:** затонувшие корабли и подводные руины не стоят рядом с монументами; морская трава и kelp проверяют настоящую глубину воды рядом со структурами на дне; нет шва песок/глина между умеренно тёплым и тёплым океаном.
+- **Пещеры:** горные пояса на поверхности больше не меняют биомы глубоких пещер (глубокая тьма, серные пещеры); в глубине тот же климат, что у нативной защиты водоносного слоя.
+- **Экран отладки:** в F3 есть `FG lookup E` / `FG lookup W` — эрозия и странность, которые реально использует таблица биомов.
+
+### В 0.9.1
 - **Огромные снежные массивы:** большие холодные регионы поднимаются в середине хребтами из разных вершин; маленькие снежные регионы остаются холмами.
-- **Горные биомы по реальной высоте** во всех горах: внизу лес и луга, выше снежные склоны и ельник, на вершинах ледяные и острые пики — пиков рядом с лесом на той же высоте больше нет.
+- **Горные биомы по реальной высоте** во всех горах: внизу лес и луга, выше снежные склоны и ельник, на вершинах ледяные и острые пики.
 - **Логичные холодные переходы:** леса и равнины переходят к снежным равнинам через пояс тайги; холодные берега — снежные пляжи; очень влажная морозная земля — снежная тайга, а не дождливая; на прохладных высоких плато у снега растёт горный лес, а не саванна или джунгли.
 - **Новые океаны:** абиссальные котловины, желоба, срединные хребты и подводные горы; базальт на вулканических поднятиях, глина в котловинах, осадки слоем в несколько блоков; морская трава, kelp и рифы зависят от света и грунта; подводных структур меньше, монументы стоят на нативных сваях.
 - **Берега и гигантские горы:** нет стен по 80 блоков из моря, склоны гигантов мягче, на почти отвесных стенах голая скала вместо почвы.
@@ -162,7 +182,7 @@ gradle build
 
 Если зависимость не скачивается, добавьте `--init-script scripts/central-fallback.init.gradle` (тот же запасной источник, что в CI). JAR появляется в `build/libs`. Сборка компилирует датапак генерации (`src/tool`) и запускает все Java-тесты. В `scripts/` лежат валидаторы пакета и инструменты анализа. В `src/audit` — тестовые наблюдатели для нативных проверок генерации на сервере.
 
-Документация по каждой подсистеме — в [`docs/`](docs/). Начните с [`docs/terrain-repair-0.9.1.md`](docs/terrain-repair-0.9.1.md), [`docs/caves-0.9.0.md`](docs/caves-0.9.0.md) и [`docs/product-direction.md`](docs/product-direction.md).
+Документация по каждой подсистеме — в [`docs/`](docs/). Начните с [`docs/terrain-repair-0.9.1.md`](docs/terrain-repair-0.9.1.md) (0.9.1 и 0.9.2), [`docs/caves-0.9.0.md`](docs/caves-0.9.0.md) и [`docs/product-direction.md`](docs/product-direction.md).
 
 ---
 

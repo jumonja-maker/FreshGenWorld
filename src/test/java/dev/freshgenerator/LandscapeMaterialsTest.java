@@ -101,6 +101,8 @@ class LandscapeMaterialsTest {
   assertFalse(EcotonePolicy.COASTS.contains("minecraft:taiga"));
   assertFalse(EcotonePolicy.COASTS.contains("minecraft:forest"));
   assertTrue(EcotonePolicy.COASTS.containsAll(Set.of("minecraft:beach","minecraft:snowy_beach","minecraft:stony_shore")));
+  // Audit R8 OI-01: every ocean ID under the seabed rule has the same coastal priority (no sand/clay seam at T 0.55).
+  for(String o:EcotonePolicy.SEABEDS)if(o.contains("ocean"))assertTrue(EcotonePolicy.COASTS.contains(o),o);
   assertTrue(Collections.disjoint(EcotonePolicy.COASTS,EcotonePolicy.FOREST_FLOORS));
  }
  @Test void nearVerticalGrassyWallsBecomeRockButHillsKeepTheirPalette(){

@@ -222,6 +222,7 @@ class KarstCaveTest {
         switch (t) {
             case "minecraft:cache", "minecraft:interpolated": return eval(o.get("input"), v);
             case "minecraft:abs": return Math.abs(eval(o.get("input"), v));
+            case "minecraft:lerp": { double a = eval(o.get("alpha"), v), f = eval(o.get("first"), v); return f + a * (eval(o.get("second"), v) - f); }
             case "minecraft:square": { double x = eval(o.get("input"), v); return x * x; }
             case "minecraft:clamp": return Math.clamp(eval(o.get("input"), v), o.get("min").getAsDouble(), o.get("max").getAsDouble());
             case "minecraft:noise": {

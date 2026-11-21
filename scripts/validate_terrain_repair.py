@@ -10,7 +10,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = '0.9.1-alpha.1'
+VERSION = '0.9.2-beta.1'
 CANDIDATE = ROOT / f'build/libs/FreshGenerator-Fabric-26.3-{VERSION}.jar'
 BASELINE = ROOT.parent / 'FreshGenerator-Workspace/release-0.9.1/baseline-0.9.0-alpha.1.jar'
 BASELINE_SHA = 'ac9423cca905034f83af66564168b52ec428a65f1ece8c0984709fc184e6981c'
@@ -31,15 +31,15 @@ ADDED = frozenset({DATA + 'karst/' + n + '.json' for n in KARST_ADDED}
                   | {OCEAN + n + '.json' for n in ('mount', 'province', 'ridge', 'size', 'swell', 'trench')}
                   | {DATA + 'landscape/' + n + '.json' for n in ('coast_cap', 'coast_profile', 'ocean_relief')}
                   | {DATA + 'landscape/massif/' + n + '.json' for n in ('interior', 'form', 'peaks', 'peaks_noise', 'size', 'size_noise', 'massif',
-                                                                     'belt_cold', 'belt_height', 'belt_abs_w', 'belt_gate', 'belt_erosion_floor', 'belt_erosion_cap', 'belt_erosion', 'belt_weight', 'belt_target', 'belt_ridges')}
+                                                                     'belt_cold', 'belt_height', 'belt_peak_height', 'belt_abs_w', 'belt_gate', 'belt_erosion_floor', 'belt_erosion_cap', 'belt_erosion', 'belt_weight', 'belt_target', 'belt_ridges', 'belt_depth', 'routed_erosion', 'routed_ridges')}
                   | {'data/freshgenerator/worldgen/noise/highlands_v2/landscape/' + n + '.json' for n in ('massif_peaks', 'massif_size')}
                   | {DATA + 'landscape/climate/' + n + '.json' for n in ('highland_band', 'highland_moisture_floor', 'highland_moisture_cap', 'highland_moisture', 'boreal_moisture_floor', 'boreal_fringe_floor', 'boreal_moisture',
-                                                                         'cold_coast_floor', 'coast_erosion', 'frozen_moisture_cap', 'frozen_moisture')}
+                                                                         'cold_coast_floor', 'coast_erosion', 'frozen_moisture_cap', 'frozen_moisture', 'frozen_erosion', 'frozen_windswept')}
                   | {'data/minecraft/worldgen/structure_set/' + n + '.json' for n in ('ocean_monuments', 'ocean_ruins', 'shipwrecks')}
                   | {CLASS + n for n in ('core/TerrainRepair.class', 'core/OceanFloor.class', 'core/OceanEcology.class',
                                          'core/OceanEcology$Community.class', 'core/OceanEcology$Ground.class', 'ocean/OceanEnvironment.class')})
 CHANGED = frozenset({'data/freshgenerator/worldgen/noise/highlands_v2/karst/doline.json', DATA + 'karst/pothole.json', DATA + 'karst/doline.json', DATA + 'karst/pothole_allow.json', DATA + 'landscape/coast_height.json',
-                     DATA + 'landscape/giant.json', DATA + 'landscape/uplift.json', DATA + 'landscape/height_unguarded.json', DATA + 'regions/biome_vegetation.json', 'data/freshgenerator/worldgen/noise_settings/highlands_v2.json', 'data/freshgenerator/worldgen/material_rule/highlands_v2/surface.json', CLASS + 'core/KarstModel.class', CLASS + 'core/LandscapeMaterials$Cover.class',
+                     DATA + 'landscape/giant.json', DATA + 'landscape/uplift.json', DATA + 'landscape/height_unguarded.json', DATA + 'regions/biome_vegetation.json', DATA + 'regions/biome_temperature.json', DATA + 'landscape/climate/biome_continents.json', 'data/freshgenerator/worldgen/noise_settings/highlands_v2.json', 'data/freshgenerator/worldgen/material_rule/highlands_v2/surface.json', CLASS + 'core/KarstModel.class', CLASS + 'core/GlacialIce.class', CLASS + 'ice/GlacialSurface$Environment.class', CLASS + 'ice/GlacialSurface.class', CLASS + 'forest/ForestEnvironment.class', CLASS + 'core/LandscapeMaterials$Cover.class',
                      CLASS + 'mixin/ForestPlacementMixin.class',
                      CLASS + 'core/LandscapeMaterials.class', CLASS + 'mixin/CaveCarverMixin.class', CLASS + 'surface/EcotonePolicy.class',
                      CLASS + 'surface/EcotoneSurfaceRule$1.class', CLASS + 'surface/EcotoneSurfaceRule$2.class',
