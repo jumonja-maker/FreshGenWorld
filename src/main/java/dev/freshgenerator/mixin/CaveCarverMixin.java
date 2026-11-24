@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.*;
 import com.llamalad7.mixinextras.sugar.*;
 import com.llamalad7.mixinextras.sugar.ref.LocalRef;
 import dev.freshgenerator.cave.CaveCarverGuard;
+import dev.freshgenerator.cave.NativeCarverSwitch;
 import dev.freshgenerator.core.CaveAccessModel;
 import net.minecraft.core.Holder;
 import net.minecraft.server.level.WorldGenRegion;
@@ -34,10 +35,7 @@ abstract class CaveCarverMixin {
  @Inject(method="generateCarvers",at=@At("HEAD"),cancellable=true,require=1)
  private void freshgenerator$skipDisabledCarvers(ChunkAccess chunk,Blender blender,NoiseChunk noise,RandomState state,
    BiomeManager biomes,WorldGenRegion region,MaterialRule materials,CallbackInfo ci) {
-  var settings=((NoiseBasedChunkGenerator)(Object)this).generatorSettings();
-  if(settings.unwrapKey().map(k->k.identifier().toString()).orElse("").equals(CaveAccessModel.SETTINGS)
-     &&settings.value().debugFunctions().functions().stream().anyMatch(e->e.label().equals(dev.freshgenerator.core.KarstModel.NATIVE_CARVERS_OFF)))
-   ci.cancel();
+  if(NativeCarverSwitch.carversOff((NoiseBasedChunkGenerator)(Object)this,region.registryAccess(),state))ci.cancel();
  }
  @WrapOperation(method="generateCarvers",at=@At(value="INVOKE",target="Lnet/minecraft/world/level/levelgen/carver/WorldCarver;carve(Lnet/minecraft/world/level/levelgen/WorldGenerationContext;Lnet/minecraft/util/RandomSource;Lnet/minecraft/world/level/ChunkPos;Lnet/minecraft/world/level/ChunkPos;Lnet/minecraft/world/level/chunk/CarverOutput;)Z"),require=1)
  private boolean freshgenerator$surfaceAccess(WorldCarver carver,WorldGenerationContext generation,RandomSource random,
@@ -46,8 +44,8 @@ abstract class CaveCarverMixin {
    @Local(ordinal=0) Holder<WorldCarver> definition,@Share("surfaceCaveGuard") LocalRef<CaveCarverGuard> shared) {
   var generator=(NoiseBasedChunkGenerator)(Object)this;
   if(generator.generatorSettings().unwrapKey().map(k->k.identifier().toString()).orElse("").equals(CaveAccessModel.SETTINGS)) {
-   if(generator.generatorSettings().value().debugFunctions().functions().stream()
-      .anyMatch(e->e.label().equals(dev.freshgenerator.core.KarstModel.NATIVE_CARVERS_OFF)))return false;
+   // 0.9.2 (audit "build10" T02): the value of the marker function decides, not a debug label.
+   if(NativeCarverSwitch.carversOff(generator,region.registryAccess(),state))return false;
    String id=definition.unwrapKey().map(k->k.identifier().toString()).orElse("");
    if(id.equals("minecraft:cave")||id.equals("minecraft:cave_extra_underground")||id.equals("minecraft:canyon")) {
     var guard=shared.get();if(guard==null){guard=new CaveCarverGuard(generator.generatorSettings().value(),state,target);shared.set(guard);}

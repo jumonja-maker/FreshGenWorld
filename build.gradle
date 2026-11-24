@@ -55,7 +55,12 @@ processResources {
 }
 java { sourceCompatibility = JavaVersion.VERSION_25; targetCompatibility = JavaVersion.VERSION_25; withSourcesJar() }
 tasks.withType(JavaCompile).configureEach { options.release = 25; options.encoding = 'UTF-8' }
-jar { from sourceSets.core.output }
+jar {
+    from sourceSets.core.output
+    // MIT requires the licence text in every copy (code audit 24.11 K-7); mod-specific names avoid clashes.
+    from('LICENSE') { rename { 'LICENSE_freshgenerator' } }
+    from('NOTICE.md') { rename { 'NOTICE_freshgenerator.md' } }
+}
 sourcesJar {
     dependsOn generateWorldgen
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -65,6 +70,10 @@ sourcesJar {
 test {
     dependsOn toolClasses, auditClasses
     useJUnitPlatform()
+    // Broken generation invariants throw in tests (Diagnostics.broken); in the game they are reported once.
+    systemProperty 'freshgenerator.strict', 'true'
+    // Synthetic endless slopes grow drainage models past the game's 2048-tile working size.
+    maxHeapSize = '2g'
     testLogging { events 'passed', 'failed', 'skipped'; exceptionFormat 'full' }
 }
 check { dependsOn smokeClasses, auditClasses }

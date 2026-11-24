@@ -20,8 +20,12 @@ import java.util.*;
  *     monument pillars reach down below the main box to the floor, so a box test alone let
  *     them stand on a shipwreck's fence (audit R7: 3 of 368 pillars).</li>
  * </ul>
- * Structure sets are global data: they apply to every world loaded with the mod. */
+ * Structure sets are global data. The adapted sets therefore live under their own ids (freshgenerator:shipwrecks,
+ * ...: native structures, native salts, wider spacing) and StructureSets keeps each world on one family - the
+ * current world on these, every other world (a vanilla save opened with the mod, other presets) on the untouched
+ * native sets (audit 23.11: the overrides changed new chunks of vanilla worlds too). */
 public final class OceanStructureCompiler {
+    /** Native set id -> {spacing, separation} of its FreshGenerator counterpart. */
     public static final Map<String, int[]> SPACING = Map.of(
             "minecraft:shipwrecks", new int[]{40, 10},
             "minecraft:ocean_ruins", new int[]{36, 12},
@@ -29,26 +33,26 @@ public final class OceanStructureCompiler {
     /** Chunks around a monument placement kept free of shipwrecks and ruins (the monument spans +-2 chunks). */
     public static final int MONUMENT_EXCLUSION = 4;
     public static final Set<String> EXCLUDED_NEAR_MONUMENTS = Set.of("minecraft:shipwrecks", "minecraft:ocean_ruins");
+    /** The FreshGenerator counterpart of a native set id. */
+    public static String adapted(String nativeId) { return "freshgenerator:" + nativeId.substring(nativeId.indexOf(':') + 1); }
     private OceanStructureCompiler() { }
 
     public static void apply(Map<String, JsonElement> output, VanillaAssets vanilla) {
         var staged = new TreeMap<>(Objects.requireNonNull(output));
         try {
             for (var e : SPACING.entrySet()) {
-                String path = VanillaAssets.path("structure_set", e.getKey());
+                String path = VanillaAssets.path("structure_set", adapted(e.getKey()));
                 if (staged.containsKey(path)) throw new IllegalStateException("Ocean structure layer already present: " + e.getKey());
-                JsonObject set = vanilla.read(path).deepCopy().getAsJsonObject();
+                JsonObject set = vanilla.read(VanillaAssets.path("structure_set", e.getKey())).deepCopy().getAsJsonObject();
                 JsonObject placement = set.getAsJsonObject("placement");
                 if (!"minecraft:random_spread".equals(placement.get("type").getAsString())) throw new IllegalStateException("Unexpected placement " + e.getKey());
                 placement.addProperty("spacing", e.getValue()[0]);
                 placement.addProperty("separation", e.getValue()[1]);
                 if (EXCLUDED_NEAR_MONUMENTS.contains(e.getKey())) {
-                    // (the test classpath shadows vanilla data with this pack, so our own zone may be read back)
-                    if (placement.has("exclusion_zone") && !"minecraft:ocean_monuments".equals(placement.getAsJsonObject("exclusion_zone").get("other_set").getAsString()))
-                        throw new IllegalStateException("Unexpected exclusion zone " + e.getKey());
+                    if (placement.has("exclusion_zone")) throw new IllegalStateException("Unexpected native exclusion zone " + e.getKey());
                     JsonObject zone = new JsonObject();
                     zone.addProperty("chunk_count", MONUMENT_EXCLUSION);
-                    zone.addProperty("other_set", "minecraft:ocean_monuments");
+                    zone.addProperty("other_set", adapted("minecraft:ocean_monuments"));
                     placement.add("exclusion_zone", zone);
                 }
                 staged.put(path, set);

@@ -14,7 +14,9 @@ public final class OceanEcology {
 
     public static Community community(String configuredFeature) {
         if (configuredFeature == null) return Community.NONE;
-        if (configuredFeature.contains("seagrass")) return Community.SEAGRASS;
+        // The native seagrass features only: a substring matched any namespace or name holding "seagrass" (code audit
+        // 24.11 F3: seagrass_addon:oak, forestry:dry_seagrass_marker).
+        if (configuredFeature.equals("minecraft:seagrass") || configuredFeature.startsWith("minecraft:seagrass_")) return Community.SEAGRASS;
         if (configuredFeature.equals("minecraft:kelp")) return Community.KELP;
         if (configuredFeature.equals("minecraft:warm_ocean_vegetation") || configuredFeature.equals("minecraft:sea_pickle")) return Community.REEF;
         return Community.NONE;

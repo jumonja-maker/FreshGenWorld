@@ -144,6 +144,48 @@ class GlacialIceTest {
             if(rotation==0)assertTrue(xEnergy>zEnergy*2);else assertTrue(zEnergy>xEnergy*2);
         }
     }
+    @Test void crevassePatternDoesNotDependOnTheDistanceFromTheOrigin(){
+        // Realism audit 0.9.2 (X/Y/Z): with the phase measured from the world origin, turning the flow by
+        // 1e-6 rad changed 21.8% of the crevasse depths near X29999000 and none near the origin.
+        for(int offset:new int[]{0,8192,1_000_000,29_999_000}){
+            int changed=0,cracks=0;
+            for(int z=-48;z<48;z++)for(int x=-48;x<48;x++){
+                double a=.45,turn=1e-6;
+                var s1=new GlacialIce.LandSite(225,.45,1.8,.95,1,a,0);
+                var s2=new GlacialIce.LandSite(225,.45,1.8,.95,1,a*Math.cos(turn),a*Math.sin(turn));
+                int d1=GlacialIce.land(42,offset+x,z,s1).crevasseDepth(),d2=GlacialIce.land(42,offset+x,z,s2).crevasseDepth();
+                if(d1!=d2)changed++;if(d1>0)cracks++;
+            }
+            assertTrue(changed<=2,"offset "+offset+": "+changed+" crevasse depths changed by a 1e-6 rad turn");
+            assertTrue(cracks>40,"crevasses still form at offset "+offset+": "+cracks);
+        }
+    }
+    @Test void crevasseStatisticsDoNotDependOnThePositionInTheAnchorGrid(){
+        // Updated realism audit GU-01: blended thresholded masks gave any crack 8.6% at an anchor and 22% at a cell
+        // centre, depth >= 5 5.1% / 0.3%. Same site, many seeds and angles: node and centre now match.
+        int[] any=new int[2],deep=new int[2];int n=0;
+        for(long seed=1;seed<=600;seed++)for(int k=0;k<12;k++){
+            double angle=k*Math.PI/6,gx=.45*Math.cos(angle),gz=.45*Math.sin(angle);
+            var site=new GlacialIce.LandSite(225,.45,1.8,.95,1,gx,gz);
+            int cx=(int)(seed*7919%200-100)*48,cz=(int)(seed*104729%200-100)*48;
+            int[] at={GlacialIce.land(seed,cx,cz,site).crevasseDepth(),GlacialIce.land(seed,cx+48/2,cz+48/2,site).crevasseDepth()};
+            for(int i=0;i<2;i++){if(at[i]>0)any[i]++;if(at[i]>=5)deep[i]++;}
+            n++;
+        }
+        double anyNode=any[0]/(double)n,anyCentre=any[1]/(double)n,deepNode=deep[0]/(double)n,deepCentre=deep[1]/(double)n;
+        assertEquals(anyNode,anyCentre,.03,"any crack: node "+anyNode+" centre "+anyCentre);
+        assertEquals(deepNode,deepCentre,.02,"deep crack: node "+deepNode+" centre "+deepCentre);
+        assertTrue(anyNode>.03,"crevasses still form: "+anyNode);
+    }
+    @Test void flowDirectionTurnsSmoothlyAtTheSlopeThreshold(){
+        // Updated realism audit GU-02: |gradient| 0.02 +- 1e-12 changed crevasse depths by up to two blocks.
+        int changed=0;
+        for(int z=-96;z<96;z++)for(int x=-96;x<96;x++){
+            var below=new GlacialIce.LandSite(225,.45,1.8,.95,1,.02-1e-12,0);var above=new GlacialIce.LandSite(225,.45,1.8,.95,1,.02+1e-12,0);
+            if(GlacialIce.land(42,x,z,below).crevasseDepth()!=GlacialIce.land(42,x,z,above).crevasseDepth())changed++;
+        }
+        assertTrue(changed<=2,changed+" depths changed across the threshold");
+    }
     @Test void capShareAndBaseSnowSupportTheCallerLimits(){
         // Audit R8 OI-02: a flat cold plateau is a cap, a supplied sheltered valley a tongue.
         var plateau=new GlacialIce.LandSite(250,0,0,1,0);

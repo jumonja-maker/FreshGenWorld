@@ -59,7 +59,7 @@ public final class HighlandClimateCompiler {
     public static final Set<String> REPLACED = Set.of(path(P + "regions/biome_vegetation"), SETTINGS);
     public static final Set<String> ADDED = Set.of(path(C + "highland_moisture_floor"), path(C + "highland_moisture"),
             path(C + "highland_moisture_cap"), path(C + "highland_band"), path(C + "boreal_moisture_floor"), path(C + "boreal_fringe_floor"), path(C + "boreal_moisture"), path(C + "cold_coast_floor"), path(C + "coast_erosion"),
-            path(C + "frozen_moisture_cap"), path(C + "frozen_moisture"), path(C + "frozen_erosion"), path(C + "frozen_windswept"));
+            path(C + "frozen_moisture_cap"), path(C + "frozen_moisture"), path(C + "frozen_erosion"), path(C + "frozen_windswept"), path(C + "forest_moisture"));
     private static final Gson G = new Gson();
     private HighlandClimateCompiler() { }
 
@@ -92,6 +92,12 @@ public final class HighlandClimateCompiler {
                 spline(C + "surface_temperature", new double[][]{{MOIST_FULL, 1, 0}, {MOIST_OUT, 0, 0}})))));
         staged.put(path(C + "frozen_moisture"), cache(obj("type", "minecraft:min", "left", C + "boreal_moisture", "right", C + "frozen_moisture_cap")));
         vegetation.addProperty("first", C + "frozen_moisture");
+        // 0.9.2 (audit "build10" F04): the forest model read the local moisture field while the biome
+        // was chosen from the corrected lookup humidity (dry belt, highland, boreal and frozen
+        // corrections): a savanna picked by the dry belt at M -0.15 grew trees for M +0.90. The forest
+        // field gets the same correction the lookup applied to the regional humidity; its local terms
+        // (valleys, shores) stay.
+        staged.put(path(C + "forest_moisture"), cache(add(P + "vegetation", add(C + "frozen_moisture", mul(-1, C + "biome_moisture")))));
         staged.put(path(P + "regions/biome_vegetation"), vegetation);
         // The router erosion is also read by the aquifer in 3-D, so the floor is evaluated only
         // where it can act: erosion below the floor, and continentalness in the coast band

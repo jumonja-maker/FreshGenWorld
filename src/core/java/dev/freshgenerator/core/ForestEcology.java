@@ -131,7 +131,9 @@ public final class ForestEcology {
     }
     public static double smooth(double lo,double hi,double v) {
         if(!Double.isFinite(lo)||!Double.isFinite(hi)||hi<=lo||!Double.isFinite(v))throw new IllegalArgumentException("Invalid interval");
-        double t=clamp((v-lo)/(hi-lo),0,1);return t*t*t*(t*(6*t-15)+10);
+        // Audit 0.9.2 A092-05: the polynomial can exceed 1 by one ulp at the clamp edge (1.000000000000001),
+        // which an ecotone weight above 1 turned into an exception.
+        double t=clamp((v-lo)/(hi-lo),0,1);return clamp(t*t*t*(t*(6*t-15)+10),0,1);
     }
     private static double clamp(double v,double lo,double hi){return Math.max(lo,Math.min(hi,v));}
     public static double noise(long seed,double x,double z) {

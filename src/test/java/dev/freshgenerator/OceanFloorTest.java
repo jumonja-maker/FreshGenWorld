@@ -124,6 +124,9 @@ class OceanFloorTest {
         assertEquals(OceanEcology.Community.KELP, OceanEcology.community("minecraft:kelp"));
         assertEquals(OceanEcology.Community.SEAGRASS, OceanEcology.community("minecraft:seagrass_tall"));
         assertEquals(OceanEcology.Community.NONE, OceanEcology.community("minecraft:oak"));
+        assertEquals(OceanEcology.Community.NONE, OceanEcology.community("seagrass_addon:oak"));
+        assertEquals(OceanEcology.Community.NONE, OceanEcology.community("forestry:dry_seagrass_marker"));
+        assertEquals(OceanEcology.Community.SEAGRASS, OceanEcology.community("minecraft:seagrass_short"));
     }
 
     static double eval(JsonElement n, Map<String, Double> v) {

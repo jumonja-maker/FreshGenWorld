@@ -6,8 +6,11 @@ import dev.freshgenerator.forest.NativeForestPalette;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.Holder;
 import net.minecraft.server.Bootstrap;
+import net.minecraft.world.level.levelgen.feature.RandomBooleanSelectorFeature;
 import net.minecraft.world.level.levelgen.feature.RandomSelectorFeature;
+import net.minecraft.world.level.levelgen.feature.SimpleRandomSelectorFeature;
 import net.minecraft.world.level.levelgen.feature.TreeFeature;
+import net.minecraft.world.level.levelgen.feature.WeightedRandomSelectorFeature;
 import net.minecraft.world.level.levelgen.placement.*;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -60,5 +63,45 @@ class NativeForestPaletteTest {
         assertEquals(1,point.placement().size());assertInstanceOf(SurfaceWaterDepthFilter.class,point.placement().getFirst());
         var unsafe=new RandomSelectorFeature(List.of(),Holder.direct(new PlacedFeature(Holder.direct(rawTree()),List.of())));
         assertNull(NativeForestPalette.atSourcePosition(new PlacedFeature(Holder.direct(unsafe),nativeModifiers("trees_jungle"))));
+    }
+    @Test void everyNativeSelectorContainerIsCheckedTheSameWay()throws Exception{
+        // Updated realism audit UP-F05: a raw tree was declined directly and in a random selector, but accepted inside
+        // weighted, boolean and simple selectors; an always-true predicate counted as a soil check.
+        var raw=Holder.direct(new PlacedFeature(Holder.direct(rawTree()),List.of()));
+        var checked=Holder.direct(new PlacedFeature(Holder.direct(rawTree()),nativeModifiers("jungle_tree")));
+        var outer=nativeModifiers("trees_jungle");
+        for(var unsafe:List.<net.minecraft.world.level.levelgen.feature.Feature>of(
+                new WeightedRandomSelectorFeature(net.minecraft.util.random.WeightedList.of(raw)),
+                new RandomBooleanSelectorFeature(checked,raw),
+                new SimpleRandomSelectorFeature(net.minecraft.core.HolderSet.direct(checked,raw))))
+            assertNull(NativeForestPalette.atSourcePosition(new PlacedFeature(Holder.direct(unsafe),outer)),unsafe.getClass().getSimpleName());
+        for(var safe:List.<net.minecraft.world.level.levelgen.feature.Feature>of(
+                new WeightedRandomSelectorFeature(net.minecraft.util.random.WeightedList.of(checked)),
+                new RandomBooleanSelectorFeature(checked,checked),
+                new SimpleRandomSelectorFeature(net.minecraft.core.HolderSet.direct(checked))))
+            assertNotNull(NativeForestPalette.atSourcePosition(new PlacedFeature(Holder.direct(safe),outer)),safe.getClass().getSimpleName());
+        var alwaysTrue=new ArrayList<PlacementModifier>(outer);alwaysTrue.add(BlockPredicateFilter.forPredicate(net.minecraft.world.level.levelgen.blockpredicates.BlockPredicate.alwaysTrue()));
+        assertNull(NativeForestPalette.atSourcePosition(new PlacedFeature(Holder.direct(rawTree()),alwaysTrue)),"always_true is not a soil check");
+        // Code audit 24.11 F2: "the block here is air" is not a survival check either (an oak stood on air).
+        var airOnly=new ArrayList<PlacementModifier>(outer);airOnly.add(BlockPredicateFilter.forPredicate(net.minecraft.world.level.levelgen.blockpredicates.BlockPredicate.matchesBlocks(net.minecraft.world.level.block.Blocks.AIR)));
+        assertNull(NativeForestPalette.atSourcePosition(new PlacedFeature(Holder.direct(rawTree()),airOnly)),"an air check is not a soil check");
+    }
+    @Test void everyVanillaTreeDonorIsStillAccepted(){
+        var placed=net.minecraft.data.registries.VanillaRegistries.createWorldLookup().lookupOrThrow(net.minecraft.core.registries.Registries.PLACED_FEATURE);
+        int accepted=0;var declined=new ArrayList<String>();
+        for(var ref:placed.listElements().toList()){
+            var donor=ref.value();var feature=donor.feature().value();
+            if(!(feature instanceof TreeFeature||feature instanceof RandomSelectorFeature||feature instanceof WeightedRandomSelectorFeature
+                    ||feature instanceof RandomBooleanSelectorFeature||feature instanceof SimpleRandomSelectorFeature))continue;
+            if(NativeForestPalette.pointFilters(donor.placement())==null)continue;
+            if(!containsTree(feature,0))continue;
+            if(NativeForestPalette.atSourcePosition(donor)!=null)accepted++;else declined.add(ref.key().identifier().toString());
+        }
+        assertTrue(accepted>40,"vanilla tree donors: "+accepted);
+        assertEquals(List.of(),declined,"vanilla tree donors declined");
+    }
+    private static boolean containsTree(net.minecraft.world.level.levelgen.feature.Feature f,int depth){
+        if(depth>6)return false;if(f instanceof TreeFeature)return true;
+        return f.getSubFeatures().anyMatch(h->containsTree(h.value(),depth+1));
     }
 }

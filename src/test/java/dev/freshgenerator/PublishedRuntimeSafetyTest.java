@@ -21,7 +21,9 @@ class PublishedRuntimeSafetyTest {
     "dev/freshgenerator/surface/EcotoneSurfaceRule.class",
     "dev/freshgenerator/surface/EcotoneSurfaceRule$1.class",
     "dev/freshgenerator/mixin/ForestPlacementMixin.class",
-    "dev/freshgenerator/village/VillageTerrainModel.class");
+    "dev/freshgenerator/village/VillageTerrainModel.class",
+    // Audit 23.11: grading reads the water level of rivers and lakes, not only the sea.
+    "dev/freshgenerator/village/VillageTerrainPlan.class");
   Set<String> removed = Set.of("dev/freshgenerator/surface/SnowTransitions.class",
       "dev/freshgenerator/mixin/BiomeSnowMixin.class");
   try (var zip = new ZipFile("dist/FreshGenerator-Fabric-26.3-0.3.6-alpha.1.jar")) {

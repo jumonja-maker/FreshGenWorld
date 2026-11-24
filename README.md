@@ -2,7 +2,7 @@
 
 # FreshGenerator
 
-A world-generation mod for **Minecraft Java 26.3** (Fabric). It reshapes terrain, climate, biome borders, forests, glaciers and caves toward natural, logical landscapes, while keeping native Minecraft biomes, structures, water and blocks.
+A world-generation mod for **Minecraft Java 26.3** (Fabric). It reshapes terrain, climate, biome borders, forests, glaciers and caves toward natural, logical landscapes and carves rivers, lakes and waterfalls from a drainage model, while keeping native Minecraft biomes, structures and blocks.
 
 **[English](#english) · [Русский](#русский)**
 
@@ -16,9 +16,16 @@ A world-generation mod for **Minecraft Java 26.3** (Fabric). It reshapes terrain
 2. Download `FreshGenerator-Fabric-26.3-<version>.jar` from the [latest release](https://github.com/jumonja-maker/FreshGenWorld/releases/latest) and put it into the `mods` folder.
 3. Create a new world with the normal **Default** world type: FreshGenerator replaces it, no extra option to pick.
 
-Existing chunks are never rebuilt; new terrain appears only in new chunks. **Start a new world for 0.9.2:** biome borders, snow lines and glaciers changed, so continuing an older world leaves seams where old and new chunks meet. The mod is in beta: back up your worlds.
+Existing chunks are never rebuilt; new terrain appears only in new chunks. **Start a new world for 0.9.3:** rivers, lakes, waterfalls and climate borders changed, so continuing an older world leaves seams where old and new chunks meet. The mod is in beta: back up your worlds.
 
-### What's new in 0.9.2 (beta)
+### What's new in 0.9.3 (beta)
+- **Rivers, lakes and waterfalls:** a drainage model of the whole landscape (flow routing, catchments, lake basins) decides where water runs. Streams start at real channel heads, join into rivers that widen downstream and reach the sea through broad valleys; lakes fill closed basins up to a level proven watertight block by block; waterfalls sit at real drops. The model is computed when chunks generate and is never saved: the same seed always gives the same water.
+- **Climate shape:** caves share the climate of the surface above them, climate borders meander instead of running straight, and a small island takes the climate of most of its land.
+- **Search:** `/locate biome minecraft:river` finds wide rivers (7+ blocks) within about 2 km of the player at any height and reports the river itself.
+
+**Compatibility notes.** FreshGenerator replaces the `minecraft:normal` (Default) world preset. In its own world it switches off all cave carvers (including carvers added by other mods) and uses its own sets of shipwrecks, ocean ruins and monuments. Its mixins wrap parts of chunk generation (`NoiseChunk`, `NoiseBasedChunkGenerator`, `ChunkGenerator`, `ServerLevel`, `FeaturePlacer`); mods that rewrite the same code (for example C2ME) and Distant Horizons have not been tested with it.
+
+### In 0.9.2
 - **Much faster generation:** chunks generate about 4–14 times faster. The disabled vanilla cave carvers no longer query the climate of ~289 neighbouring chunks for every chunk; the generated blocks are identical.
 - **Snow line by height:** mountain biomes switch along height contours — snowy slopes from about Y168 and peaks from Y212 (25 blocks lower in cold regions), whatever the local erosion. Snowy slopes and peaks no longer stand next to forest, meadow or cherry groves at the same height, and grove or snowy slopes no longer sit in low valleys.
 - **Warm mountains:** rocky stony peaks from about Y157 with snowy summits above them; a forest never appears above a rocky summit.
@@ -105,9 +112,16 @@ Documentation for every subsystem is in [`docs/`](docs/). Start with [`docs/terr
 2. Скачайте `FreshGenerator-Fabric-26.3-<версия>.jar` из [последнего релиза](https://github.com/jumonja-maker/FreshGenWorld/releases/latest) и положите в папку `mods`.
 3. Создайте новый мир в обычном режиме **«По умолчанию»**: его создаёт FreshGenerator, отдельно выбирать ничего не нужно.
 
-Существующие чанки не перестраиваются: новая генерация появляется только в новых чанках. **Для 0.9.2 создайте новый мир:** изменились границы биомов, снеговые линии и ледники, и в старом мире на стыке старых и новых чанков останутся швы. Мод в стадии beta, делайте резервные копии миров.
+Существующие чанки не перестраиваются: новая генерация появляется только в новых чанках. **Для 0.9.3 создайте новый мир:** изменились реки, озёра, водопады и климатические границы, и в старом мире на стыке старых и новых чанков останутся швы. Мод в стадии beta, делайте резервные копии миров.
 
-### Что нового в 0.9.2 (beta)
+### Что нового в 0.9.3 (beta)
+- **Реки, озёра и водопады:** модель стока всего ландшафта (направления течения, водосборы, котловины озёр) решает, где течёт вода. Ручьи начинаются в настоящих истоках, сливаются в реки, которые расширяются вниз по течению и выходят к морю широкими долинами; озёра заполняют замкнутые котловины до уровня, проверенного на герметичность по блокам; водопады стоят на настоящих уступах. Модель считается при генерации чанков и не сохраняется: один и тот же сид всегда даёт ту же воду.
+- **Форма климата:** пещеры получают климат поверхности над ними, климатические границы извиваются, а не идут прямыми линиями, маленький остров получает климат большей части своей суши.
+- **Поиск:** `/locate biome minecraft:river` находит широкие реки (от 7 блоков) примерно в 2 км от игрока с любой высоты и указывает на саму реку.
+
+**Совместимость.** FreshGenerator заменяет набор мира `minecraft:normal` («По умолчанию»). В своём мире он выключает все карверы пещер (в том числе добавленные другими модами) и использует свои наборы кораблекрушений, подводных руин и монументов. Его миксины оборачивают части генерации чанков (`NoiseChunk`, `NoiseBasedChunkGenerator`, `ChunkGenerator`, `ServerLevel`, `FeaturePlacer`); моды, которые переписывают тот же код (например, C2ME), и Distant Horizons вместе с ним не проверялись.
+
+### В 0.9.2
 - **Генерация намного быстрее:** чанки создаются примерно в 4–14 раз быстрее. Выключенные ванильные карверы пещер больше не опрашивают климат ~289 соседних чанков на каждый чанк; блоки мира те же самые.
 - **Снеговая линия по высоте:** горные биомы меняются по изолиниям высоты — снежные склоны примерно с Y168, пики с Y212 (в холодных регионах на 25 блоков ниже) при любой эрозии. Снежные склоны и пики больше не стоят рядом с лесом, лугом или вишнёвой рощей на той же высоте, а снежный ельник и снежные склоны — в низких долинах.
 - **Тёплые горы:** каменистые пики примерно с Y157, выше — снежные вершины; лес выше скальной вершины не появляется.

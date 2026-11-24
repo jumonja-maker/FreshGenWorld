@@ -143,6 +143,30 @@ class NativeTreeGrowthTest {
         var a=growth.adapt(original,4,0);var b=growth.adapt(original,0,2);
         assertSame(a,growth.adapt(original,4,0));assertSame(b,growth.adapt(original,0,2));assertNotSame(a,b);
     }
+    @Test void depthLimitedResultsDoNotDependOnTheCacheHistory()throws Exception {
+        // Updated realism audit UP-F04: a subtree warmed up near the root was read again deeper down, past the depth limit
+        // (five default-only selectors around oak_checked: 12 of 63 cases differed from a fresh deep request).
+        var oak=tree("oak_checked");
+        for(int sharedDepth=1;sharedDepth<=3;sharedDepth++)for(int outerDepth=0;outerDepth<=6;outerDepth++)for(int[] shape:List.of(new int[]{0,0},new int[]{2,0},new int[]{4,2})){
+            var shared=new PlacedFeature(Holder.direct(oak),List.of());for(int i=0;i<sharedDepth;i++)shared=wrap(shared);
+            var deep=shared;for(int i=0;i<outerDepth;i++)deep=wrap(deep);
+            String label="shared "+sharedDepth+" outer "+outerDepth+" shape "+shape[0]+"/"+shape[1];
+            var cold=new NativeTreeGrowth();boolean coldDeep=adapted(cold.adapt(deep,shape[0],shape[1]),oak);boolean directAfterDeep=adapted(cold.adapt(shared,shape[0],shape[1]),oak);
+            var warmPlaced=new NativeTreeGrowth();boolean freshDirect=adapted(warmPlaced.adapt(shared,shape[0],shape[1]),oak);
+            assertEquals(coldDeep,adapted(warmPlaced.adapt(deep,shape[0],shape[1]),oak),"placed warm-up: "+label);
+            var warmFeature=new NativeTreeGrowth();warmFeature.adapt(shared.feature().value(),shape[0],shape[1]);
+            assertEquals(coldDeep,adapted(warmFeature.adapt(deep,shape[0],shape[1]),oak),"feature warm-up: "+label);
+            assertEquals(freshDirect,directAfterDeep,"direct after deep: "+label);
+            assertEquals(sharedDepth+outerDepth<=4,coldDeep,"depth limit: "+label);
+        }
+    }
+    private static PlacedFeature wrap(PlacedFeature p){return new PlacedFeature(Holder.direct(new RandomSelectorFeature(List.of(),Holder.direct(p))),List.of());}
+    /** Whether the innermost tree of a default-only selector chain was adapted (not the original object). */
+    private static boolean adapted(PlacedFeature p,TreeFeature original){
+        Feature f=p.feature().value();
+        while(f instanceof RandomSelectorFeature r)f=r.defaultFeature().value().feature().value();
+        return f!=original;
+    }
     @Test void invalidBandsAreRejected() {
         var growth=new NativeTreeGrowth();var original=new NoOpFeature();
         assertThrows(IllegalArgumentException.class,()->growth.adapt(original,-1,1));

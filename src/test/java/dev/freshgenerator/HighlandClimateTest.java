@@ -111,7 +111,8 @@ class HighlandClimateTest {
         }
     }
     @Test void onlyTheLookupHumidityChanges() {
-        assertEquals(C + "frozen_moisture", pack.get(HighlandClimateCompiler.path(P + "regions/biome_vegetation")).getAsJsonObject().get("first").getAsString());
+        // 0.10 (ClimateShapeCompiler): the lookup humidity is the surface humidity at every depth (no depth lerp).
+        assertEquals(C + "frozen_moisture", pack.get(HighlandClimateCompiler.path(P + "regions/biome_vegetation")).getAsJsonObject().get("input").getAsString());
         assertTrue(pack.get(HighlandClimateCompiler.path(SnowMassifCompiler.M + "belt_erosion")).toString().contains("\"" + C + "coast_erosion\""));
         assertFalse(pack.get(SurfaceOnlyCompiler.FINAL_DENSITY).toString().contains("highland_moisture"), "terrain does not read lookup axes");
     }

@@ -21,8 +21,11 @@ public final class ForestComposition {
         String chosen=biome;double roll=unit(seed^0x7D137A31L,x,z),sum=0;
         for(int i=0;i<neighbours.length;i++) {
             String other=neighbours[i];
-            if(other==null||other.equals(biome)||!compatible(biome,other,site))continue;
-            sum+=i<4?.075:.025;
+            if(other==null||other.equals(biome))continue;
+            // 0.9.2: continuous neighbour share (no jump of the palette at the climate limits).
+            double share=compatibility(biome,other,site);
+            if(share<=0)continue;
+            sum+=(i<4?.075:.025)*share;
             if(roll<sum){chosen=other;break;}
         }
         // Preserve the native selector, including its uncommon/fallen variants,
@@ -57,14 +60,21 @@ public final class ForestComposition {
     }
 
     public static boolean compatible(String from,String to,ForestEcology.Site site) {
-        int a=woodland(from),b=woodland(to);
-        if(a==0||b==0||from.equals(to))return false;
-        if(a==b)return true;
-        // No broadleaf incursion into snow forest or the cold upper timberline.
-        if(from.equals("minecraft:snowy_taiga")||to.equals("minecraft:snowy_taiga"))return false;
-        return site.temperature()>-.42&&site.temperature()<.55
-            &&site.height()<175+25*site.temperature();
+        return compatibility(from,to,site)>=.5;
     }
+    /** Neighbour palette share 0..1: identities are hard, the climate limits narrow ramps (0.9.2). */
+    public static double compatibility(String from,String to,ForestEcology.Site site) {
+        int a=woodland(from),b=woodland(to);
+        if(a==0||b==0||from.equals(to))return 0;
+        if(a==b)return 1;
+        // No broadleaf incursion into snow forest or the cold upper timberline.
+        if(from.equals("minecraft:snowy_taiga")||to.equals("minecraft:snowy_taiga"))return 0;
+        double t=site.temperature();
+        return ramp(t+.42,ForestEcotone.CLIMATE_RAMP)*ramp(.55-t,ForestEcotone.CLIMATE_RAMP)
+            *ramp(175+25*t-site.height(),ForestEcotone.HEIGHT_RAMP);
+    }
+    /** 0 well below zero, 1 well above, smooth across +-width/2. */
+    private static double ramp(double v,double width){return ForestEcology.smooth(-width/2,width/2,v);}
     private static int woodland(String biome) {
         return switch(biome) {
             case "minecraft:forest","minecraft:birch_forest","minecraft:old_growth_birch_forest" -> 1;

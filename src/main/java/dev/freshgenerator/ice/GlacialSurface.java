@@ -34,6 +34,12 @@ public final class GlacialSurface {
 
     public static void apply(ChunkAccess chunk,RandomState state,MaterialSystem system,
                              BiomeManager biomes,Set<Holder<Biome>> possibleBiomes,NoiseGeneratorSettings settings) {
+        // Settings without the shared terrain field (a data pack renamed its F3 label): no glaciers, no crash in the
+        // surface stage (code audit 24.11 F-4).
+        if(dev.freshgenerator.cave.DebugFields.find(settings,dev.freshgenerator.core.CaveAccessModel.HEIGHT_LABEL)==null){
+            dev.freshgenerator.core.Diagnostics.broken("glacier-field","FreshGenerator: world settings lack the field '"+dev.freshgenerator.core.CaveAccessModel.HEIGHT_LABEL+"'; glaciers are off");
+            return;
+        }
         var environment=new Environment(state,system,biomes,settings);
         var at=new BlockPos.MutableBlockPos();boolean changed=false;
         int x0=chunk.getPos().getMinBlockX(),z0=chunk.getPos().getMinBlockZ(),sea=system.getSeaLevel();
@@ -106,8 +112,7 @@ public final class GlacialSurface {
             this.state=state;this.sea=system.getSeaLevel();this.biomes=biomes;
             // Use the actual four-block terrain envelope. chunkSurfaceLevel is
             // a separate coarse sixteen-block oracle and is not the solid bed.
-            terrainHeight=state.getSampler(settings.debugFunctions().functions().stream()
-                .filter(f->f.label().equals("FG cave access: surface")).findFirst().orElseThrow().function());
+            terrainHeight=state.getSampler(dev.freshgenerator.cave.DebugFields.require(settings,dev.freshgenerator.core.CaveAccessModel.HEIGHT_LABEL));
             climate=state.createClimateSampler(context);
         }
         public double height(int x,int z){

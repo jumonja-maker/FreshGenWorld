@@ -118,9 +118,16 @@ class TerrainRealismTest {
         for(String name:List.of("regional_temperature","regional_vegetation")){
             var noise=full.get(TerrainRealismCompiler.path(C+name)).getAsJsonObject();double scale=noise.get("xz_scale").getAsDouble();
             for(String axis:List.of("x","z")){
-                var shift=noise.getAsJsonObject("shift_"+axis);assertEquals("minecraft:add",shift.get("type").getAsString());
-                assertEquals(TerrainRealismCompiler.WARP_BLOCKS*scale,shift.getAsJsonObject("right").get("left").getAsDouble(),1e-12);
-                assertEquals(C+"warp_"+axis,shift.getAsJsonObject("right").get("right").getAsString());
+                // 0.10 (ClimateShapeCompiler) adds further warp layers on top: find the 0.8.2 bend in the add chain.
+                var shift=noise.getAsJsonObject("shift_"+axis);boolean found=false;
+                while(shift!=null&&"minecraft:add".equals(shift.get("type").getAsString())){
+                    var right=shift.getAsJsonObject("right");
+                    if(right.get("right").getAsString().equals(C+"warp_"+axis)){
+                        assertEquals(TerrainRealismCompiler.WARP_BLOCKS*scale,right.get("left").getAsDouble(),1e-12);found=true;break;
+                    }
+                    shift=shift.get("left").isJsonObject()?shift.getAsJsonObject("left"):null;
+                }
+                assertTrue(found,"0.8.2 climate bend present: "+name+" "+axis);
             }
         }
         var sea=full.get(TerrainRealismCompiler.path(L+"seabed_detail")).toString();

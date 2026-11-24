@@ -114,14 +114,35 @@ public final class GlacialIce {
         int thickness=Math.min(maximum,(int)Math.floor(28*coverage));
         if(thickness==0)return NO_LAND;
         // Crevasses occupy only part of a patch and never sever its basal ice.
-        double norm=Math.hypot(site.gradientX(),site.gradientZ());
-        double flowX=norm>.02?-site.gradientX()/norm:Math.cos(random(seed,119)*6.28);
-        double flowZ=norm>.02?-site.gradientZ()/norm:Math.sin(random(seed,119)*6.28);
-        // Fracture lines run across flow; their phase changes along its axis.
-        double across=(x*flowX+z*flowZ)/8.5;
-        double line=Math.abs(Math.sin(across+.8*noise(seed^0x3B950FL,x/31.0,z/31.0)));
+        // Updated realism audit (GU-02): the flow direction switched from the seed direction to the downslope one
+        // at exactly |gradient| 0.02 (a 1e-12 change moved a crack by two blocks); both now blend over 0.01..0.03.
+        double norm=Math.hypot(site.gradientX(),site.gradientZ()),turn=Math.cos(random(seed,119)*6.28),side=Math.sin(random(seed,119)*6.28);
+        double toSlope=smooth(.01,.03,norm),flowX=(1-toSlope)*turn,flowZ=(1-toSlope)*side;
+        if(norm>0){flowX-=toSlope*site.gradientX()/norm;flowZ-=toSlope*site.gradientZ()/norm;}
+        double flowNorm=Math.hypot(flowX,flowZ);
+        if(flowNorm<1e-9){flowX=turn;flowZ=side;}else{flowX/=flowNorm;flowZ/=flowNorm;}
+        // Fracture lines run across flow; their phase changes along its axis. 0.9.2 (realism audit, X/Y/Z):
+        // the phase was measured from the world origin, so a small turn of the flow direction on a curved
+        // slope moved it in proportion to the coordinates - near X8192 the lines broke into rows of dashes.
+        // Each crack field is anchored to a nearby grid point (own random phase). Updated realism audit (GU-01):
+        // averaging the four thresholded line masks made grid nodes (one sharp mask) and cell centres (four weak
+        // ones) differ - any crack 8.6% / 22%, deep cracks 5.1% / 0.3%. The anchors' phases are blended instead
+        // (as unit vectors at twice the angle, the line pattern repeats every pi) and one line field is drawn
+        // with the blended phase: the same depth statistics everywhere, the phase is continuous, and it is
+        // still independent of the distance from the origin.
+        int ax0=Math.floorDiv(x,CRACK_CELL),az0=Math.floorDiv(z,CRACK_CELL);
+        double tx=smooth(0,1,(x-ax0*CRACK_CELL)/(double)CRACK_CELL),tz=smooth(0,1,(z-az0*CRACK_CELL)/(double)CRACK_CELL);
+        double wobble=.8*noise(seed^0x3B950FL,x/31.0,z/31.0),re=0,im=0;
+        for(int a=0;a<=1;a++)for(int b=0;b<=1;b++){
+            double weight=(a==0?1-tx:tx)*(b==0?1-tz:tz);if(weight==0)continue;
+            int ax=(ax0+a)*CRACK_CELL,az=(az0+b)*CRACK_CELL;
+            double local=2*(((x-ax)*flowX+(z-az)*flowZ)/8.5+6.283185307179586*unit(hash(seed^0x51A7C3L,ax,az)));
+            re+=weight*Math.cos(local);im+=weight*Math.sin(local);
+        }
+        double across=.5*Math.atan2(im,re);
+        double lines=smooth(.92,.995,Math.abs(Math.sin(across+wobble)));
         double strain=smooth(.12,.75,site.slope());
-        double fissure=smooth(.92,.995,line)*smooth(-.10,.45,noise(seed^0xAAE751L,x/43.0,z/43.0));
+        double fissure=lines*smooth(-.10,.45,noise(seed^0xAAE751L,x/43.0,z/43.0));
         int crack=(int)Math.floor((2+8*strain)*fissure);
         crack=Math.max(0,Math.min(thickness-3,crack));
         boolean moraine=thickness<=5&&site.uphillSnowSupply()>.35
@@ -148,6 +169,8 @@ public final class GlacialIce {
         double cap=.72*smooth(.82,.98,site.coldness())*smooth(195,270,site.height())*(1-smooth(.35,.90,site.slope()));
         return cap<=0?0:smooth(0,1,(cap-tongue)/Math.max(1e-9,cap)*4);
     }
+    /** Spacing of the crack-phase anchors (blocks). */
+    static final int CRACK_CELL=48;
     private static void unitInput(double v){if(!Double.isFinite(v)||v<0||v>1)throw new IllegalArgumentException("Expected suitability 0..1");}
     private static double smooth(double a,double b,double v){double t=Math.max(0,Math.min(1,(v-a)/(b-a)));return Math.clamp(t*t*t*(t*(t*6-15)+10),0,1);}
     private static long hash(long seed,int x,int z){long v=seed+x*0x9E3779B97F4A7C15L+z*0xD1B54A32D192ED03L;v=(v^(v>>>30))*0xBF58476D1CE4E5B9L;v=(v^(v>>>27))*0x94D049BB133111EBL;return v^(v>>>31);}

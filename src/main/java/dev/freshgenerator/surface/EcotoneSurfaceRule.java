@@ -18,7 +18,7 @@ import net.minecraft.world.level.levelgen.material.rule.RuleEvaluator;
 
 /** Native material rule, before structures/vegetation. Never edits a loaded world's blocks. */
 public record EcotoneSurfaceRule(DensityFunction height,DensityFunction temperature,DensityFunction erosion,
-        boolean subsurface,boolean landscape,DensityFunction moisture,DensityFunction continentality,DensityFunction oceanRelief) implements MaterialRule {
+        boolean subsurface,boolean landscape,DensityFunction moisture,DensityFunction oceanRelief) implements MaterialRule {
  public static final MapCodec<EcotoneSurfaceRule> CODEC=RecordCodecBuilder.mapCodec(i->i.group(
   DensityFunction.CODEC.fieldOf("height").forGetter(EcotoneSurfaceRule::height),
   DensityFunction.CODEC.fieldOf("temperature").forGetter(EcotoneSurfaceRule::temperature),
@@ -26,10 +26,13 @@ public record EcotoneSurfaceRule(DensityFunction height,DensityFunction temperat
   Codec.BOOL.optionalFieldOf("subsurface",false).forGetter(EcotoneSurfaceRule::subsurface),
   Codec.BOOL.optionalFieldOf("landscape",false).forGetter(EcotoneSurfaceRule::landscape),
   DensityFunction.CODEC.optionalFieldOf("moisture",DensityFunctions.zero()).forGetter(EcotoneSurfaceRule::moisture),
-  DensityFunction.CODEC.optionalFieldOf("continentality",DensityFunctions.zero()).forGetter(EcotoneSurfaceRule::continentality),
+  // 0.9.2 (audit "build10" T01): "continentality" was never read. Older saved presets still carry it,
+  // so it is accepted and dropped; the current world no longer writes it.
+  DensityFunction.CODEC.optionalFieldOf("continentality").forGetter(r->java.util.Optional.empty()),
   // 0.9.1 update 19.11: the deep-floor province relief (blocks); only the seabed copies set it.
   DensityFunction.CODEC.optionalFieldOf("ocean_relief",DensityFunctions.zero()).forGetter(EcotoneSurfaceRule::oceanRelief)
- ).apply(i,EcotoneSurfaceRule::new));
+ ).apply(i,(height,temperature,erosion,subsurface,landscape,moisture,ignored,oceanRelief)
+  ->new EcotoneSurfaceRule(height,temperature,erosion,subsurface,landscape,moisture,oceanRelief)));
  @Override public MapCodec<EcotoneSurfaceRule> codec(){return CODEC;}
  @Override public RuleEvaluator compile(MaterialRuleContext c){
   // false selects lazy native sampling, not three unnecessary full 3-D buffers for 2-D fields.
@@ -37,10 +40,13 @@ public record EcotoneSurfaceRule(DensityFunction height,DensityFunction temperat
   var m=c.getDensitiesInChunk(moisture,false);var r=c.getDensitiesInChunk(oceanRelief,false);
   // Native WORLD_SURFACE_WG gradients are rounded to block heights, include water,
   // and clamp at chunk edges. Sample the continuous ground envelope instead.
-  // Only this rule evaluator owns the context; no chunk state or global cache is used.
   var ground=landscape?((MaterialRuleContextAccessor)(Object)c).freshgenerator$randomState()
       .getSampler(height).bind(SamplerContext.builder().enableCaches().build()):null;
   long seed=c.getOrCreateRandomFactory(EcotonePolicy.SEED_ID).at(0,0,0).nextLong();
+  // Copies of this rule with the same fields in one chunk's material context share the column values and the
+  // ground nodes (Column): the fields are 2-D (0/30000 samples differ between Y), so a column read by one copy is
+  // the column the next one reads - the surface pass read every column's four heavy fields twice (two copies).
+  var column=Column.of(c,java.util.List.<Object>of(height,temperature,erosion,moisture,landscape));
   return new RuleEvaluator(){
    int lastX=Integer.MIN_VALUE,lastZ=Integer.MIN_VALUE;float elevation,climate,eroded,wetness;
    double landscapeSlope,relief;boolean slopeReady,reliefReady;EcotoneModel.Fields fields;
@@ -55,7 +61,7 @@ public record EcotoneSurfaceRule(DensityFunction height,DensityFunction temperat
    // The ground envelope is interpolated on the native 4-block cell grid, so its value
    // between grid nodes is bilinear in the node values. Caching the nodes of this chunk
    // (about 50) replaces four full landscape evaluations per column (1024 per chunk).
-   final java.util.HashMap<Long,Double> nodes=new java.util.HashMap<>();
+   final java.util.HashMap<Long,Double> nodes=column.nodes;
    double node(int x,int z){
     long key=((long)x<<32)^(z&0xffffffffL);Double v=nodes.get(key);
     if(v==null){if(nodes.size()>4096)nodes.clear();v=(double)ground.sampleValue(x,0,z);nodes.put(key,v);}
@@ -80,9 +86,13 @@ public record EcotoneSurfaceRule(DensityFunction height,DensityFunction temperat
     if(!alpineEligible&&!shore&&!forest&&!woodedMesa&&!cliffEligible&&!seabed)return null;
     if(!landscape&&y<=c.getSeaLevel()+8)return null;
     if(x!=lastX||z!=lastZ){
-     elevation=h.get();climate=t.get();eroded=e.get();
-     wetness=landscape?m.get():0;slopeReady=false;reliefReady=false;
-     fields=EcotoneModel.sample(seed,x,z,elevation,climate);lastX=x;lastZ=z;
+     if(column.x==x&&column.z==z){elevation=column.elevation;climate=column.climate;eroded=column.eroded;wetness=column.wetness;fields=column.fields;}
+     else{
+      elevation=h.get();climate=t.get();eroded=e.get();wetness=landscape?m.get():0;
+      fields=EcotoneModel.sample(seed,x,z,elevation,climate);
+      column.x=x;column.z=z;column.elevation=elevation;column.climate=climate;column.eroded=eroded;column.wetness=wetness;column.fields=fields;
+     }
+     slopeReady=false;reliefReady=false;lastX=x;lastZ=z;
     }
     if(y<elevation-6||y>elevation+2)return null;
     // Under water this is still the slope of the ground. Native outer material
@@ -128,6 +138,16 @@ public record EcotoneSurfaceRule(DensityFunction height,DensityFunction temperat
     return null;
    }
   };
+ }
+ /** Column values shared by the copies of this rule with the same fields in one material context (one chunk's
+  * surface pass, one thread). Only memoizes 2-D field values and ground nodes of that chunk. */
+ static final class Column {
+  private static final java.util.Map<MaterialRuleContext,java.util.Map<java.util.List<Object>,Column>> CONTEXTS=new java.util.WeakHashMap<>();
+  int x=Integer.MIN_VALUE,z=Integer.MIN_VALUE;float elevation,climate,eroded,wetness;EcotoneModel.Fields fields;
+  final java.util.HashMap<Long,Double> nodes=new java.util.HashMap<>();
+  static Column of(MaterialRuleContext c,java.util.List<Object> key){
+   synchronized(CONTEXTS){return CONTEXTS.computeIfAbsent(c,k->new java.util.HashMap<>()).computeIfAbsent(key,k->new Column());}
+  }
  }
  private BlockState material(LandscapeMaterials.Cover cover){
   return (switch(cover){

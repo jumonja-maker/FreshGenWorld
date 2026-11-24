@@ -27,7 +27,7 @@ class CaveAccessContractTest {
   }
  }
  @Test void noNativeCarverBiomeFeatureOrStructureDefinitionIsOverridden()throws Exception{
-  var p=WorldgenCatalog.compile(new VanillaAssets());for(String name:p.keySet()){if(OceanStructureTest.REVIEWED.contains(name))continue;for(String registry:List.of("carver","biome","structure","structure_set","placed_feature","feature"))assertFalse(name.contains("/worldgen/"+registry+"/"),name);}
+  var p=WorldgenCatalog.compile(new VanillaAssets());for(String name:p.keySet()){if(OceanStructureTest.REVIEWED.contains(name)||HydrologyCompiler.DECOR.contains(name))continue;for(String registry:List.of("carver","biome","structure","structure_set","placed_feature","feature"))assertFalse(name.contains("/worldgen/"+registry+"/"),name);}
  }
  @Test void gateIsWorldSeededAndTwoDimensional()throws Exception{
   var p=WorldgenCatalog.compile(new VanillaAssets());var noise=p.get(CoherentSurfaceCompiler.ROOT+"cave_access/entrance_noise.json").getAsJsonObject().getAsJsonObject("input");

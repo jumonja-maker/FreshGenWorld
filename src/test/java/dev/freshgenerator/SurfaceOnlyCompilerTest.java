@@ -86,7 +86,11 @@ class SurfaceOnlyCompilerTest {
         String mixin = Files.readString(Path.of("src/main/java/dev/freshgenerator/mixin/CaveCarverMixin.java"));
         assertEquals("FG caves disabled", SurfaceOnlyCompiler.DISABLED_LABEL, "Compiled pack keeps the historical marker");
         assertFalse(mixin.contains("\"FG caves disabled\""), "Runtime reads the shared contract constant, not a literal");
-        String check = ".anyMatch(e->e.label().equals(dev.freshgenerator.core.KarstModel.NATIVE_CARVERS_OFF)))return false;";
+        // 0.9.2 (audit "build10" T02): the marker value decides through NativeCarverSwitch, not the label text.
+        String check = "if(NativeCarverSwitch.carversOff(generator,region.registryAccess(),state))return false;";
+        String carverSwitch = Files.readString(Path.of("src/main/java/dev/freshgenerator/cave/NativeCarverSwitch.java"));
+        assertTrue(carverSwitch.contains("/coherent/surface_only/caves_disabled") && carverSwitch.contains(">= .5"), "Marker value, found by resource key");
+        assertFalse(carverSwitch.contains("label()"), "No dependence on the debug label");
         int marker = mixin.indexOf(check);
         assertTrue(marker > mixin.indexOf(".equals(CaveAccessModel.SETTINGS)"), "Other worlds retain native carvers");
         assertTrue(marker < mixin.indexOf("String id="), "All current carvers must return before the historical ID filter");

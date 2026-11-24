@@ -37,6 +37,14 @@ abstract class ForestPlacementMixin {
   if(!freshgenerator$oceanChecked){freshgenerator$ocean=OceanEnvironment.create(level,generator);freshgenerator$oceanChecked=true;}
   return freshgenerator$ocean;
  }
+ /** Identifier of a placed feature's configured feature, built once for both hooks of one placement (code audit 24.11
+  * K-11: the string was built twice for every placed feature). */
+ @Unique private PlacedFeature freshgenerator$hintFor;
+ @Unique private String freshgenerator$hintValue;
+ @Unique private String freshgenerator$hint(PlacedFeature placed){
+  if(placed!=freshgenerator$hintFor){freshgenerator$hintValue=placed.feature().unwrapKey().map(k->k.identifier().toString()).orElse("");freshgenerator$hintFor=placed;}
+  return freshgenerator$hintValue;
+ }
  @Unique private ForestEnvironment freshgenerator$environment(){
   if(!freshgenerator$forestChecked){freshgenerator$forest=ForestEnvironment.create(level,generator);freshgenerator$forestChecked=true;}
   return freshgenerator$forest;
@@ -46,7 +54,7 @@ abstract class ForestPlacementMixin {
  private List<PlacementModifier> freshgenerator$edgeCandidates(PlacedFeature placed,Operation<List<PlacementModifier>> original,
    PlacedFeature outer,RandomSource random,BlockPos origin,boolean biomeCheck){
   var modifiers=original.call(placed);if(!biomeCheck)return modifiers;
-  String hint=placed.feature().unwrapKey().map(k->k.identifier().toString()).orElse("");if(!ForestEnvironment.hint(hint))return modifiers;
+  String hint=freshgenerator$hint(placed);if(!ForestEnvironment.hint(hint))return modifiers;
   var forest=freshgenerator$environment();return forest==null?modifiers:forest.modifiers(placed,modifiers,origin);
  }
  @WrapOperation(method="place(Lnet/minecraft/world/level/levelgen/placement/PlacedFeature;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;Z)Z",
@@ -54,7 +62,7 @@ abstract class ForestPlacementMixin {
  private boolean freshgenerator$ecologicalForest(Feature feature,WorldGenLevel level,ChunkGenerator generator,
    RandomSource random,BlockPos at,Operation<Boolean> original,PlacedFeature placed,RandomSource sourceRandom,BlockPos origin,boolean biomeCheck){
   if(biomeCheck){
-   String hint=placed.feature().unwrapKey().map(k->k.identifier().toString()).orElse("");
+   String hint=freshgenerator$hint(placed);
    // 0.9.1: seagrass, kelp and warm reefs follow light (depth), ground and patches.
    if(OceanEnvironment.hint(hint)){
     var ocean=freshgenerator$oceanEnvironment();

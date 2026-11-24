@@ -28,27 +28,42 @@ public final class ForestEcotone {
     }
 
     public static boolean compatible(String a,String b,ForestEcology.Site site){
+        return compatibility(a,b,site)>=.5;
+    }
+    /** Share of a neighbouring forest that can recruit here (0..1). Biome identities decide
+     * hard cases (no habitat, water-rooted forests, snowy taiga); the climate limits between
+     * families are narrow continuous ramps (0.9.2, audit "build10" F06: the hard moisture limit
+     * 0.2 for dry woodland next to temperate forest cut tree retention by 13.5% for a change of
+     * 0.000001 in moisture). */
+    public static double compatibility(String a,String b,ForestEcology.Site site){
+        return Math.clamp(rawCompatibility(a,b,site),0,1);
+    }
+    private static double rawCompatibility(String a,String b,ForestEcology.Site site){
         var ah=ForestHabitat.forBiome(a);var bh=ForestHabitat.forBiome(b);
-        if(ah==null||bh==null)return false;
-        if(a.equals(b))return true;
+        if(ah==null||bh==null)return 0;
+        if(a.equals(b))return 1;
         // A water-rooted forest boundary requires a different establishment
         // niche. Do not export terrestrial candidates into mangrove water.
-        if(ah.waterTolerant()||bh.waterTolerant())return ah==bh;
+        if(ah.waterTolerant()||bh.waterTolerant())return ah==bh?1:0;
         var af=ForestHabitat.familyForBiome(a);var bf=ForestHabitat.familyForBiome(b);
-        if(af==bf)return true;
+        if(af==bf)return 1;
         double t=site.temperature(),m=site.moisture(),h=site.height();
         if((af==ForestEcology.Family.CONIFER&&bf==ForestEcology.Family.TEMPERATE)
             ||(bf==ForestEcology.Family.CONIFER&&af==ForestEcology.Family.TEMPERATE))
-            return !a.equals("minecraft:snowy_taiga")&&!b.equals("minecraft:snowy_taiga")
-                &&t>-.42&&t<.55&&h<175+25*t;
+            return a.equals("minecraft:snowy_taiga")||b.equals("minecraft:snowy_taiga")?0
+                :above(t,-.42,CLIMATE_RAMP)*below(t,.55,CLIMATE_RAMP)*below(h,175+25*t,HEIGHT_RAMP);
         if((af==ForestEcology.Family.DRY_WOODLAND&&bf==ForestEcology.Family.TEMPERATE)
             ||(bf==ForestEcology.Family.DRY_WOODLAND&&af==ForestEcology.Family.TEMPERATE))
-            return t>-.10&&m>-.80&&m<.20&&h<200;
+            return above(t,-.10,CLIMATE_RAMP)*above(m,-.80,CLIMATE_RAMP)*below(m,.20,CLIMATE_RAMP)*below(h,200,HEIGHT_RAMP);
         if((af==ForestEcology.Family.DRY_WOODLAND&&bf==ForestEcology.Family.TROPICAL)
             ||(bf==ForestEcology.Family.DRY_WOODLAND&&af==ForestEcology.Family.TROPICAL))
-            return t>0&&m>-.45&&m<.35&&h<200;
-        return false;
+            return above(t,0,CLIMATE_RAMP)*above(m,-.45,CLIMATE_RAMP)*below(m,.35,CLIMATE_RAMP)*below(h,200,HEIGHT_RAMP);
+        return 0;
     }
+    /** Width of the compatibility ramps in climate units and in blocks of height. */
+    public static final double CLIMATE_RAMP=.04,HEIGHT_RAMP=10;
+    private static double above(double v,double edge,double width){return ForestEcology.smooth(edge-width/2,edge+width/2,v);}
+    private static double below(double v,double edge,double width){return 1-above(v,edge,width);}
 
     /** Fixed world-coordinate stencil and interpolation. There are no chunk
      * votes or state from previously placed trees. Weights of treeless or
@@ -66,8 +81,11 @@ public final class ForestEcotone {
                 double weight=corner*(dx==0?2:1)*(dz==0?2:1)/16;
                 // 0.9.0: a treeless or incompatible neighbour is a zero-capacity share.
                 // Renormalising it away kept a full forest up to the last column.
-                if(pool==null||!compatible(own.biome(),pool.biome(),site)){treeless+=weight;continue;}
-                weights.merge(pool,weight,Double::sum);total+=weight;
+                // 0.9.2: a partly compatible neighbour splits its weight between forest and treeless.
+                double share=pool==null?0:compatibility(own.biome(),pool.biome(),site);
+                treeless+=weight*(1-share);
+                if(share<=0)continue;
+                weights.merge(pool,weight*share,Double::sum);total+=weight*share;
             }
         }
         // 0.9.1 audit R4 (F-1): no compatible forest anywhere in the stencil is the limit of a
@@ -75,8 +93,9 @@ public final class ForestEcotone {
         // to 79% retention between neighbouring columns. A negligible own share keeps the
         // stature/palette defined while recruitment stays at that limit (about zero).
         if(weights.isEmpty())return List.of(new Share(own,EMPTY_SHARE));
-        double all=total+treeless;
-        var result=new ArrayList<Share>();for(var entry:weights.entrySet())result.add(new Share(entry.getKey(),entry.getValue()/all));
+        double all=total+Math.max(0,treeless);
+        // Normalised shares stay in (0,1] for every finite input (A092-05).
+        var result=new ArrayList<Share>();for(var entry:weights.entrySet())result.add(new Share(entry.getKey(),Math.clamp(entry.getValue()/all,Double.MIN_VALUE,1)));
         return List.copyOf(result);
     }
 

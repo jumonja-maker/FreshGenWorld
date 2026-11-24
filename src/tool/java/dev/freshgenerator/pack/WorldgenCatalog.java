@@ -26,8 +26,14 @@ public final class WorldgenCatalog {
   // 0.9.1: ocean floor provinces, seabed palette and fewer, adapted ocean structures.
   OceanFloorCompiler.apply(out);
   OceanStructureCompiler.apply(out, vanilla);
+  // 0.9.2: hot dry lowland just below sea level is a dry pan, not 1-2 blocks of water over sand.
+  DryLandCompiler.apply(out);
   // 0.9.0: karst cave system. CaveNetworkCompiler remains for history/tests only.
   KarstCaveCompiler.apply(out);
+  // 0.10 (user request 23.11): underground climate follows the surface, meandering climate borders, island climate.
+  ClimateShapeCompiler.apply(out);
+  // 0.10 (user request 22.11): water on land - drainage network, lakes, waterfalls; no native river loops.
+  HydrologyCompiler.apply(out);
   DefaultWorldCompiler.apply(out);
   return Collections.unmodifiableMap(out);
  }

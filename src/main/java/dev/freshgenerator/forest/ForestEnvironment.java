@@ -23,8 +23,11 @@ import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 import net.minecraft.world.level.levelgen.placement.PlacementModifier;
 import java.util.*;
 
-/** Read-only environment scoped to ONE native FeaturePlacer. No global world cache,
- * no neighbouring chunk requests, no post-load edits, no candidate retries.
+/** Read-only environment scoped to ONE native FeaturePlacer. No neighbouring chunk requests, no post-load edits,
+ * no candidate retries. The only state shared between placers is a per-world memo of two pure functions of the
+ * position (ForestWorldMemo: noise biome of a quart cell, ground height of a column): every candidate's site reads the
+ * biomes and heights 16-32 blocks around it, and neighbouring candidates and chunks asked for the same cells again
+ * - the forest was ~22% of the serial decoration queue (Chunk Atlas profile). Same values whatever placer asks first.
  */
 public final class ForestEnvironment {
     public static final String SETTINGS="freshgenerator:highlands_v2";
@@ -45,13 +48,19 @@ public final class ForestEnvironment {
     private final Map<PlacedFeature,List<String>> featureOwners=new IdentityHashMap<>();
     private final Map<PlacedFeature,Integer> proposalBudgets=new IdentityHashMap<>();
     private final Map<Long,ForestEcotone.Pool> poolSamples=new HashMap<>();
-    private final Map<Long,List<ForestEcotone.Share>> ecotones=new HashMap<>();
+    // Audit 0.9.2 XYZ-C01: the mix depends on the candidate's own biome, so it is part of the key
+    // (one X/Z can hold two forest biomes at different Y; the X/Z-only key returned the other one's mix).
+    private record MixKey(long xz,String biome){}
+    private final Map<MixKey,List<ForestEcotone.Share>> ecotones=new HashMap<>();
     private final HolderLookup.Provider registries;
     private boolean metadataReady;
     private final NativeTreeGrowth growth;
     private final DensitySampler height,temperature,moisture;
+    private final dev.freshgenerator.core.hydro.HydroField hydrology;
+    private final dev.freshgenerator.core.hydro.HydroField.Column water=new dev.freshgenerator.core.hydro.HydroField.Column();
     private final SamplerContext context=SamplerContext.builder().enableCaches().build();
     private final BiomeManager biomes;
+    private final ForestWorldMemo memo;
     private final long seed;
     private final int sea;
     private final Map<Long,Float> heights=new HashMap<>();
@@ -65,16 +74,24 @@ public final class ForestEnvironment {
         var level=region.getLevel();var registry=level.registryAccess();var state=level.getChunkSource().randomState();
         registries=registry;
         growth=new NativeTreeGrowth(registry);
-        height=sampler(state,registry.lookupOrThrow(Registries.DENSITY_FUNCTION).getOrThrow(key("coherent/height")).value());
+        // Water on land 1.0 (audit 22.11 FG-02): the forest reads the ground with the drainage network carved in
+        // (valley floors, banks) and the real rivers and lakes as its shore, not the ground before the rivers.
+        var densities=registry.lookupOrThrow(Registries.DENSITY_FUNCTION);
+        height=sampler(state,densities.get(key("coherent/terrain")).orElseGet(()->densities.getOrThrow(key("coherent/height"))).value());
+        hydrology=dev.freshgenerator.hydrology.HydrologyDensity.field(state,generator.generatorSettings().value());
         temperature=sampler(state,registry.lookupOrThrow(Registries.DENSITY_FUNCTION).getOrThrow(key("temperature")).value());
-        moisture=sampler(state,registry.lookupOrThrow(Registries.DENSITY_FUNCTION).getOrThrow(key("vegetation")).value());
+        // 0.9.2 (audit "build10" F04): local moisture with the biome-lookup corrections (dry belt,
+        // highland, boreal, frozen), so the trees agree with the biome they grow in.
+        moisture=sampler(state,registry.lookupOrThrow(Registries.DENSITY_FUNCTION).getOrThrow(key("landscape/climate/forest_moisture")).value());
         for(String name:FEATURES) features.add(registry.lookupOrThrow(Registries.PLACED_FEATURE).getOrThrow(
                 ResourceKey.create(Registries.PLACED_FEATURE,Identifier.parse("minecraft:"+name))).value());
         for(String name:UNDERSTORY)understory.put(registry.lookupOrThrow(Registries.PLACED_FEATURE).getOrThrow(
                 ResourceKey.create(Registries.PLACED_FEATURE,Identifier.parse("minecraft:"+name))).value(),name);
         for(String name:ForestComposition.VARIANTS)variants.put(name,registry.lookupOrThrow(Registries.PLACED_FEATURE).getOrThrow(
                 ResourceKey.create(Registries.PLACED_FEATURE,Identifier.parse("minecraft:"+name))).value());
-        biomes=level.getBiomeManager().withDifferentSource(generator.getBiomeSource().createCachingResolver(state));
+        memo=ForestWorldMemo.of(state);
+        var source=generator.getBiomeSource().createCachingResolver(state);
+        biomes=level.getBiomeManager().withDifferentSource((qx,qy,qz)->memo.biome(qx,qy,qz,source));
         seed=region.getSeed()^0x6F7265737445434FL;sea=region.getSeaLevel();
     }
     private static DensitySampler sampler(RandomState state,DensityFunction f){return state.getSampler(f);}
@@ -123,8 +140,11 @@ public final class ForestEnvironment {
             // A treeless or incompatible neighbour also starts a transition: the
             // ecotone blend then thins recruitment toward it (0.9.0).
             var pool=poolAt(x0+dx,z0+dz);if(pool==null){transition=true;continue;}
-            boolean compatible=false;for(String owner:owners)if(ForestEcotone.compatible(owner,pool.biome(),site)){compatible=true;break;}
-            if(!compatible){transition=true;continue;}maximum=Math.max(maximum,pool.capacity());
+            // Audit 0.9.2 A092-06: the budget follows the continuous blend - any positive compatibility
+            // can recruit from this neighbour (a 0.5 cut-off changed the budget 11 -> 2 at M 0.2/0.200001).
+            double compatibility=0;for(String owner:owners)compatibility=Math.max(compatibility,ForestEcotone.compatibility(owner,pool.biome(),site));
+            if(compatibility<=0){transition=true;continue;}maximum=Math.max(maximum,pool.capacity());
+            if(compatibility<1)transition=true;
             // Different ecosystems mix even at equal native capacity (forest/cherry 10.1).
             if(Math.abs(pool.capacity()-count.mean())>=1e-9||!owners.contains(pool.biome()))transition=true;
         }
@@ -228,7 +248,7 @@ public final class ForestEnvironment {
         var pool=biomePools.get(id);if(poolSamples.size()>=1024)poolSamples.clear();poolSamples.put(key,pool);return pool;
     }
     private List<ForestEcotone.Share> mix(int x,int z,String id,ForestEcology.Site site){
-        long key=packed(x,z);var cached=ecotones.get(key);if(cached!=null)return cached;
+        var key=new MixKey(packed(x,z),id);var cached=ecotones.get(key);if(cached!=null)return cached;
         var result=ForestEcotone.blend(x,z,biomePools.get(id),site,this::poolAt);
         if(ecotones.size()>=256)ecotones.clear();ecotones.put(key,result);return result;
     }
@@ -270,7 +290,7 @@ public final class ForestEnvironment {
             double w=(cx==0?1-tx:tx)*(cz==0?1-tz:tz);if(w==0)continue;
             double[] p=proximity(gx+16*cx,gz+16*cz);shore+=w*p[0];edge+=w*p[1];
         }
-        return new ForestEcology.Site(h,sea,Math.hypot(sx,sz),h-neighbour/4,
+        return new ForestEcology.Site(h,waterReference(x,z),Math.hypot(sx,sz),h-neighbour/4,
             temperature.sampleValue(context,x,0,z),moisture.sampleValue(context,x,0,z),shore,edge);
     }
     private String biomeId(int x,float h,int z){return biomes.getBiome(x,(int)Math.ceil(h),z).unwrapKey().map(k->k.identifier().toString()).orElse("");}
@@ -284,6 +304,9 @@ public final class ForestEnvironment {
             if(!wooded(id))edge+=.15;
             int fx=x+32*d[0],fz=z+32*d[1];if(!wooded(biomeId(fx,height(fx,fz),fz)))edge+=.10;
         }
+        // Rivers, streams and lakes of the drainage network at any height: the field's continuous distance to water
+        // (exact for lakes, to the channel edge for rivers), full shore within 4 blocks, none from 24.
+        shore=Math.max(shore,inlandShore(x,z));
         if(proximity.size()>=256)proximity.clear();
         double[] value={Math.min(1,shore),Math.min(1,edge)};proximity.put(key,value);return value;
     }
@@ -302,6 +325,27 @@ public final class ForestEnvironment {
         }
         return false;
     }
+    /** Water level the low-bank terms count from (the "sea level" of the site): the sea, or a river or lake of the
+     * drainage network nearby - a lake shore at Y130 is as wet as a sea shore (audit 23.11: the waterlogging penalty
+     * faded out above Y69 whatever the water). The level of the water the field measured the shore distance to: eight
+     * rays at that distance missed water between them and took the sea level beside a stream at Y75 (code audit 24.11
+     * F1, seed 42 X576 Z-1856). */
+    private double waterReference(int x,int z){
+        if(hydrology==null)return sea;
+        hydrology.column(x,z,water);
+        if(water.wet())return Math.max(sea,water.water+1);
+        double d=water.wetDistance;
+        if(!(d<=24)||water.nearWater==dev.freshgenerator.core.hydro.HydroModel.NO_WATER)return sea;
+        return Math.max(sea,water.nearWater+1);
+    }
+    /** Shore weight from the drainage network (any height, not only near the sea). */
+    private double inlandShore(int x,int z){
+        if(hydrology==null)return 0;
+        hydrology.column(x,z,water);
+        if(water.wet())return 1;
+        double d=water.wetDistance;
+        return Double.isFinite(d)?Math.max(0,Math.min(1,(24-d)/20)):0;
+    }
     private boolean natural(BlockPos at,float h){
         if(at.getY()>=h-6&&at.getY()<=h+8)return true;
         return Math.abs(at.getY()-region.getHeight(Heightmap.Types.OCEAN_FLOOR_WG,at.getX(),at.getZ()))<=1;
@@ -319,7 +363,12 @@ public final class ForestEnvironment {
             &&!id.equals("minecraft:windswept_gravelly_hills");
     }
     private float height(int x,int z){long k=packed(x,z);Float h=heights.get(k);if(h!=null)return h;
-        float value=height.sampleValue(context,x,0,z);if(!Float.isFinite(value))throw new IllegalStateException("Invalid forest height");
+        float value=memo.height(k);
+        if(Float.isNaN(value)){value=height.sampleValue(context,x,0,z);
+            // A non-finite ground height leaves the site to the native forest (code audit 24.11 K-4): no crash.
+            if(!Float.isFinite(value)){dev.freshgenerator.core.Diagnostics.broken("forest-height","FreshGenerator forest: invalid ground height at "+x+","+z);value=sea;}
+            memo.height(k,value);}
         if(heights.size()>=1024)heights.clear();heights.put(k,value);return value;}
+
     private static long packed(int x,int z){return ((long)x<<32)|(z&0xffffffffL);}
 }

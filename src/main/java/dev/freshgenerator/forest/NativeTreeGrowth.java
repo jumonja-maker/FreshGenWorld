@@ -37,6 +37,12 @@ public final class NativeTreeGrowth {
         "minecraft:cherry_foliage_placer","minecraft:random_spread_foliage_placer","minecraft:poplar_foliage_placer");
     private final IdentityHashMap<Feature,Feature[]> features=new IdentityHashMap<>();
     private final IdentityHashMap<PlacedFeature,PlacedFeature[]> placed=new IdentityHashMap<>();
+    /** Selector levels below each cached result (updated realism audit UP-F04): a complete subtree computed near
+     * the root may be read again deeper down only while it still fits under the depth limit. */
+    private final IdentityHashMap<Feature,int[]> featureReach=new IdentityHashMap<>();
+    private final IdentityHashMap<PlacedFeature,int[]> placedReach=new IdentityHashMap<>();
+    /** Deepest level visited by the current computation. */
+    private int deepest;
     private final DynamicOps<JsonElement> codecOps;
 
     public NativeTreeGrowth(){codecOps=JsonOps.INSTANCE;}
@@ -53,12 +59,15 @@ public final class NativeTreeGrowth {
         return adaptPlaced(original,sizeBand,crownBand,0);
     }
     private Feature adapt(Feature original,int sizeBand,int crownBand,int depth) {
-        if(sizeBand==2&&crownBand==1||depth>MAX_SELECTOR_DEPTH)return original;
+        if(sizeBand==2&&crownBand==1)return original;
+        if(depth>MAX_SELECTOR_DEPTH){truncations++;return original;}
         if(!(original instanceof TreeFeature)&&!(original instanceof RandomSelectorFeature)&&!(original instanceof WeightedRandomSelectorFeature))return original;
-        if(features.size()>=MAX_ORIGINALS&&!features.containsKey(original))features.clear();
+        if(features.size()>=MAX_ORIGINALS&&!features.containsKey(original)){features.clear();featureReach.clear();}
         Feature[] variants=features.computeIfAbsent(original,k->new Feature[BANDS]);
+        int[] reach=featureReach.computeIfAbsent(original,k->new int[BANDS]);
         int slot=sizeBand*3+crownBand;
-        if(variants[slot]!=null)return variants[slot];
+        if(variants[slot]!=null&&depth+reach[slot]<=MAX_SELECTOR_DEPTH){deepest=Math.max(deepest,depth+reach[slot]);return variants[slot];}
+        int truncatedBefore=truncations,outer=deepest;deepest=depth;
         Feature result=original;
         if(original instanceof TreeFeature tree)result=tree(tree,sizeBand,crownBand);
         else if(original instanceof RandomSelectorFeature selector) {
@@ -84,19 +93,30 @@ public final class NativeTreeGrowth {
             }
             if(changed)result=new WeightedRandomSelectorFeature(WeightedList.of(entries));
         }
-        variants[slot]=result;return result;
+        // Audit 0.9.2 DC01: a result cut by the selector depth limit depends on the path that reached it;
+        // only complete results are cached, so a node's result never depends on its first path.
+        if(truncations==truncatedBefore){variants[slot]=result;reach[slot]=deepest-depth;}
+        deepest=Math.max(outer,deepest);
+        return result;
     }
     private PlacedFeature adaptPlaced(PlacedFeature original,int sizeBand,int crownBand,int depth) {
-        if(sizeBand==2&&crownBand==1||depth>MAX_SELECTOR_DEPTH)return original;
-        if(placed.size()>=MAX_ORIGINALS&&!placed.containsKey(original))placed.clear();
+        if(sizeBand==2&&crownBand==1)return original;
+        if(depth>MAX_SELECTOR_DEPTH){truncations++;return original;}
+        if(placed.size()>=MAX_ORIGINALS&&!placed.containsKey(original)){placed.clear();placedReach.clear();}
         PlacedFeature[] variants=placed.computeIfAbsent(original,k->new PlacedFeature[BANDS]);
+        int[] reach=placedReach.computeIfAbsent(original,k->new int[BANDS]);
         int slot=sizeBand*3+crownBand;
-        if(variants[slot]!=null)return variants[slot];
+        if(variants[slot]!=null&&depth+reach[slot]<=MAX_SELECTOR_DEPTH){deepest=Math.max(deepest,depth+reach[slot]);return variants[slot];}
+        int truncatedBefore=truncations,outer=deepest;deepest=depth;
         Feature feature=adapt(original.feature().value(),sizeBand,crownBand,depth);
         // Every nested survival or snow filter remains the exact original list.
-        variants[slot]=feature==original.feature().value()?original:new PlacedFeature(Holder.direct(feature),original.placement());
-        return variants[slot];
+        var result=feature==original.feature().value()?original:new PlacedFeature(Holder.direct(feature),original.placement());
+        if(truncations==truncatedBefore){variants[slot]=result;reach[slot]=deepest-depth;}
+        deepest=Math.max(outer,deepest);
+        return result;
     }
+    /** Depth-limit cut-offs seen so far (results computed across one are not cached). */
+    private int truncations;
     private Feature tree(TreeFeature source,int sizeBand,int crownBand) {
         var trunk=TrunkPlacer.CODEC.encodeStart(codecOps,source.trunkPlacer()).getOrThrow().getAsJsonObject();
         var leaves=FoliagePlacer.CODEC.encodeStart(codecOps,source.foliagePlacer()).getOrThrow().getAsJsonObject();

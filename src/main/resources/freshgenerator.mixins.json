@@ -6,13 +6,22 @@
     "ForestPlacementMixin",
     "CaveCarverMixin",
     "NoiseChunkVillageMixin",
+    "NoiseChunkHydrologyMixin",
+    "ChunkGeneratorHydrologyMixin",
     "VillageTerrainMixin",
     "VillageLakeMixin",
     "VillageFarmSupportMixin",
     "MaterialRuleContextAccessor",
     "GlacialSurfaceMixin",
     "GlacialMaterialMixin",
-    "GlacialIcebergMixin"
+    "GlacialIcebergMixin",
+    "SnowAndFreezeMixin",
+    "BiomeSourceRiverMixin",
+    "VillageWaterMixin",
+    "StructureSetsMixin",
+    "StructureStateMixin",
+    "DiskFeatureMixin",
+    "ServerLevelBiomeMixin"
   ],
   "injectors": {
     "defaultRequire": 1

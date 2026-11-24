@@ -24,7 +24,7 @@ class KarstCaveTest {
         v.put("noise:" + K + "cross", .5); v.put("noise:" + K + "ramp_cross", .5);
         // Entrance gate noises are flat at the scale of one entrance.
         for (String n : List.of("pothole", "doline")) v.put("gradx:" + K + n, 0.);
-        v.put(P + "coherent/height", h); v.put(P + "coherent/surface_density", 0.); v.put("minecraft:y", 0.);
+        v.put(P + "coherent/height", h); v.put(P + "coherent/terrain", h); v.put(P + "hydrology/dry_banks", 1.0); v.put(P + "coherent/surface_density", 0.); v.put("minecraft:y", 0.);
         return v;
     }
     static double body(Map<String, Double> v, double y) {
@@ -39,7 +39,7 @@ class KarstCaveTest {
         var before = new TreeMap<>(WorldgenCatalog.compileTerrain(new VanillaAssets()));
         SurfaceOnlyCompiler.apply(before); LandscapeTerrainCompiler.apply(before); LandscapeBiomeCompiler.apply(before);
         LandscapeSurfaceCompiler.apply(before); TerrainRealismCompiler.apply(before); BiomeReliefCompiler.apply(before); ClimateNicheCompiler.apply(before);
-        TerrainRepairCompiler.apply(before); HighlandClimateCompiler.apply(before); SnowMassifCompiler.apply(before); OceanFloorCompiler.apply(before); OceanStructureCompiler.apply(before, new VanillaAssets()); DefaultWorldCompiler.apply(before);
+        TerrainRepairCompiler.apply(before); HighlandClimateCompiler.apply(before); SnowMassifCompiler.apply(before); OceanFloorCompiler.apply(before); OceanStructureCompiler.apply(before, new VanillaAssets()); DryLandCompiler.apply(before); ClimateShapeCompiler.apply(before); HydrologyCompiler.apply(before); DefaultWorldCompiler.apply(before);
         var changed = new TreeSet<String>();
         before.forEach((k, val) -> { if (!val.equals(pack.get(k))) changed.add(k); });
         assertEquals(KarstCaveCompiler.REPLACED, changed);

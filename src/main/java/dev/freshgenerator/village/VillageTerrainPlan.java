@@ -23,14 +23,25 @@ public final class VillageTerrainPlan {
     private VillageTerrainPlan() { x0=0; z0=0; columns=null; }
     private VillageTerrainPlan(ChunkPos pos, VillageTerrainModel model, NoiseGeneratorSettings settings, RandomState state) {
         x0=pos.getMinBlockX(); z0=pos.getMinBlockZ(); columns=new VillageTerrainModel.Column[256];
-        DensitySampler height=state.getSampler(settings.debugFunctions().functions().stream()
-            .filter(e->e.label().equals(CaveAccessModel.HEIGHT_LABEL)).findFirst().orElseThrow().function());
+        var heightField=dev.freshgenerator.cave.DebugFields.find(settings,CaveAccessModel.HEIGHT_LABEL);
+        if(heightField==null){
+            // Settings without the shared terrain field: no grading here instead of a crash (code audit 24.11 F-4).
+            dev.freshgenerator.core.Diagnostics.broken("village-field","FreshGenerator: world settings lack the field '"+CaveAccessModel.HEIGHT_LABEL+"'; village grading is off");
+            return;
+        }
+        DensitySampler height=state.getSampler(heightField);
         SamplerContext context=SamplerContext.builder().enableCaches().build();
+        // Water of the drainage network is open water like the sea: a plot on a lake shore at Y130 must not fill the
+        // lake bed as dry land (audit 23.11: bed Y129 graded to Y135.2 beside a house).
+        var hydrology=dev.freshgenerator.hydrology.HydrologyDensity.field(state,settings);
+        var water=new dev.freshgenerator.core.hydro.HydroField.Column();
         for(int x=0;x<16;x++)for(int z=0;z<16;z++) {
             int wx=x0+x,wz=z0+z;
             // Outside a village apron, a null slot is precisely a zero-influence Column.
             if(!model.hasNearbySite(wx,wz))continue;
-            var column=model.column(wx,wz,height.sampleValue(context,wx,0,wz),settings.seaLevel());
+            int level=settings.seaLevel();
+            if(hydrology!=null){hydrology.column(wx,wz,water);if(water.wet())level=Math.max(level,water.water+1);}
+            var column=model.column(wx,wz,height.sampleValue(context,wx,0,wz),level);
             if(column.influence()!=0)columns[x*16+z]=column;
         }
     }
@@ -38,14 +49,17 @@ public final class VillageTerrainPlan {
     public static VillageTerrainPlan create(ChunkAccess target,WorldGenRegion region,StructureManager manager,
                                              NoiseGeneratorSettings settings,RandomState state) {
         if(region==null||!manager.shouldGenerateStructures())return EMPTY;
-        checkedOrigin(target,region);
+        // A generation region not centred next to the target (mods that schedule chunk work differently): no grading
+        // for this chunk instead of a crash (code audit 24.11 K-4).
+        if(!nearOrigin(target,region)){
+            dev.freshgenerator.core.Diagnostics.broken("village-region","FreshGenerator: village grading target outside its generation region; grading skipped");
+            return EMPTY;
+        }
         return createWithPieces(target,region,settings,state,villagePieces(region,manager));
     }
-    private static ChunkPos checkedOrigin(ChunkAccess target,WorldGenRegion region) {
+    private static boolean nearOrigin(ChunkAccess target,WorldGenRegion region) {
         ChunkPos origin=target.getPos(),metadataOrigin=region.getCenter();
-        if(Math.abs((long)origin.x()-metadataOrigin.x())>1||Math.abs((long)origin.z()-metadataOrigin.z())>1)
-            throw new IllegalArgumentException("Village target outside the current terrain/lake footprint");
-        return origin;
+        return Math.abs((long)origin.x()-metadataOrigin.x())<=1&&Math.abs((long)origin.z()-metadataOrigin.z())<=1;
     }
     /** One local, immutable snapshot per native lava-lake invocation; never global. */
     public static List<PoolElementStructurePiece> villagePieces(WorldGenRegion region,StructureManager manager) {
@@ -76,7 +90,11 @@ public final class VillageTerrainPlan {
     public static VillageTerrainPlan createWithPieces(ChunkAccess target,WorldGenRegion region,
             NoiseGeneratorSettings settings,RandomState state,List<PoolElementStructurePiece> pieces) {
         if(region==null||pieces.isEmpty())return EMPTY;
-        ChunkPos origin=checkedOrigin(target,region);
+        if(!nearOrigin(target,region)){
+            dev.freshgenerator.core.Diagnostics.broken("village-region","FreshGenerator: village grading target outside its generation region; grading skipped");
+            return EMPTY;
+        }
+        ChunkPos origin=target.getPos();
         List<VillageTerrainModel.Site> sites=new ArrayList<>();
         for(PoolElementStructurePiece pool:pieces) {
             if(!pool.isCloseToChunk(origin,24))continue;

@@ -35,6 +35,15 @@ class ForestContractTest {
   String s=Files.readString(Path.of("src/main/java/dev/freshgenerator/forest/ForestEnvironment.java"));
   for(String forbidden:List.of(".setBlock(",".getChunk(",".destroyBlock(",".nextInt(","ThreadLocal","static final Map"))assertFalse(s.contains(forbidden),forbidden);
  }
+ @Test void sharedForestStateIsAPureMemo()throws Exception {
+  // The only state shared between placers (audit 23.11 speed-up) memoizes position functions of one world: keys are
+  // distinct per quart (negative coordinates, world border, every Y) and a value is the source's own.
+  var keys=new java.util.HashSet<Long>();
+  for(int qx:new int[]{-8_000_000,-1,0,1,7_999_999})for(int qz:new int[]{-8_000_000,-1,0,1,7_999_999})for(int qy=-16;qy<=80;qy++)
+   assertTrue(keys.add(dev.freshgenerator.forest.ForestWorldMemoAccess.key(qx,qy,qz)),"key "+qx+","+qy+","+qz);
+  String s=Files.readString(Path.of("src/main/java/dev/freshgenerator/forest/ForestWorldMemo.java"));
+  for(String forbidden:List.of(".setBlock(",".getChunk(",".nextInt(","ThreadLocal"))assertFalse(s.contains(forbidden),forbidden);
+ }
  @Test void nativePlacementAndOnePublicWorldAreRetained()throws Exception {
   String s=Files.readString(Path.of("src/main/java/dev/freshgenerator/mixin/ForestPlacementMixin.java"));
   assertTrue(s.contains("if(biomeCheck)"));assertTrue(s.contains("require=2"));assertTrue(s.contains("original.call(feature,level,generator,random,at)"));

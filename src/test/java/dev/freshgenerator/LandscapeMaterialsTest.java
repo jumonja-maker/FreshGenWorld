@@ -131,7 +131,7 @@ class LandscapeMaterialsTest {
    assertEquals(before.get(1),after.get(1));assertEquals(2,after.size());
    assertFalse(before.get(0).getAsJsonObject().has("landscape"));
    assertTrue(after.get(0).getAsJsonObject().get("landscape").getAsBoolean());
-   assertEquals("freshgenerator:highlands_v2/vegetation",after.get(0).getAsJsonObject().get("moisture").getAsString());
+   assertEquals("freshgenerator:highlands_v2/landscape/climate/forest_moisture",after.get(0).getAsJsonObject().get("moisture").getAsString());
   }
  }
  @Test void woodedMesaSubstrateRunsBeforeNativeY97AndCannotEscapeItsBiomeFloorGuard()throws Exception{
@@ -146,7 +146,7 @@ class LandscapeMaterialsTest {
   assertEquals(2,patch.size());
   assertEquals("freshgenerator:ecotone_surface",patch.get(0).getAsJsonObject().get("type").getAsString());
   assertTrue(patch.get(0).getAsJsonObject().get("landscape").getAsBoolean());
-  assertEquals("freshgenerator:highlands_v2/vegetation",patch.get(0).getAsJsonObject().get("moisture").getAsString());
+  assertEquals("freshgenerator:highlands_v2/landscape/climate/forest_moisture",patch.get(0).getAsJsonObject().get("moisture").getAsString());
   assertEquals(97,patch.get(1).getAsJsonObject().getAsJsonObject("if_true").getAsJsonObject("anchor").get("absolute").getAsInt());
   // Removing precisely the new wrapper must restore the entire original rule,
   // including the other two badlands, swamp water, floor and subsurface branches.
