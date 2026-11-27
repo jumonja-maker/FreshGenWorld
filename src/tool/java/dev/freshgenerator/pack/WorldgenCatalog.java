@@ -23,17 +23,34 @@ public final class WorldgenCatalog {
   HighlandClimateCompiler.apply(out);
   // 0.9.1 (user request): great massifs in the cores of large cold regions.
   SnowMassifCompiler.apply(out);
+  // 0.10 (user request 26.11): continuous mountain ranges instead of single mountains in the plains.
+  MountainRangeCompiler.apply(out);
+  // 0.10 (user request 26.11): wider deserts with dunes, tablelands and inselbergs.
+  DesertCompiler.applyRelief(out);
   // 0.9.1: ocean floor provinces, seabed palette and fewer, adapted ocean structures.
   OceanFloorCompiler.apply(out);
   OceanStructureCompiler.apply(out, vanilla);
+  // 0.10 (user request 24.11): fewer villages without clusters, roads between some of them.
+  VillageStructureCompiler.apply(out, vanilla);
+  // 0.10 (user request 26.11): volcanic vents instead of the native surface lava lakes.
+  VolcanicVentCompiler.apply(out);
   // 0.9.2: hot dry lowland just below sea level is a dry pan, not 1-2 blocks of water over sand.
   DryLandCompiler.apply(out);
+  // 0.10 (user request 26.11): rare volcanoes and impact craters over the finished dry-land height.
+  LandformCompiler.apply(out);
   // 0.9.0: karst cave system. CaveNetworkCompiler remains for history/tests only.
   KarstCaveCompiler.apply(out);
+  // 0.10 (user request 26.11): deeper caves of varied kinds - levels that come and go, spongework, canyons, great chambers.
+  SpeleoCaveCompiler.apply(out);
   // 0.10 (user request 23.11): underground climate follows the surface, meandering climate borders, island climate.
   ClimateShapeCompiler.apply(out);
+  DesertCompiler.applyClimate(out);
+  // 0.10 (user request 26.11): snow and forest borders as patchy ecotones, not ruled lines.
+  EcotoneBorderCompiler.apply(out);
   // 0.10 (user request 22.11): water on land - drainage network, lakes, waterfalls; no native river loops.
   HydrologyCompiler.apply(out);
+  // 0.10 (user request 26.11): the world reaches 48 blocks deeper (Y-112).
+  DeepWorldCompiler.apply(out, vanilla);
   DefaultWorldCompiler.apply(out);
   return Collections.unmodifiableMap(out);
  }

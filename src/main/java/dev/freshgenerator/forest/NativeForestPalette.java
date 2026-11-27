@@ -45,7 +45,8 @@ public final class NativeForestPalette {
     private static boolean hasPredicate(List<PlacementModifier> filters) {
         return filters.stream().anyMatch(m->m instanceof BlockPredicateFilter f&&groundCheck(f.predicate()));
     }
-    private static final java.util.Map<BlockPredicate,Boolean> GROUND=new java.util.concurrent.ConcurrentHashMap<>();
+    /** Weak keys: every world or data-pack load brings new predicate objects (code audit 25.11: a strong map grew with each reload). */
+    private static final java.util.Map<BlockPredicate,Boolean> GROUND=java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
     static boolean groundCheck(BlockPredicate predicate){
         if(predicate instanceof WouldSurvivePredicate)return true;
         // Offsets of the native block tests are not public: read the predicate in its data form (block sets need the
@@ -66,8 +67,19 @@ public final class NativeForestPalette {
         switch(type){
             case "minecraft:would_survive":return true;
             case "minecraft:matching_blocks","minecraft:matching_block_tag":{
+                // The block right under the sapling, and a block that is ground: air below (or beside) checks no soil
+                // (code audit 25.11 OpenAI 8; every native test of this kind is (0,-1,0) on soil).
                 var offset=o.get("offset");
-                return offset!=null&&offset.isJsonArray()&&offset.getAsJsonArray().size()==3&&offset.getAsJsonArray().get(1).getAsInt()<0;
+                if(offset==null||!offset.isJsonArray()||offset.getAsJsonArray().size()!=3)return false;
+                var off=offset.getAsJsonArray();
+                if(off.get(0).getAsInt()!=0||off.get(1).getAsInt()!=-1||off.get(2).getAsInt()!=0)return false;
+                var blocks=o.get(type.equals("minecraft:matching_blocks")?"blocks":"tag");
+                if(blocks==null)return false;
+                var ids=new ArrayList<String>();
+                if(blocks.isJsonArray())for(var b:blocks.getAsJsonArray())ids.add(b.getAsString());else ids.add(blocks.getAsString());
+                if(ids.isEmpty())return false;
+                for(String id:ids)if(id.endsWith("air"))return false;
+                return true;
             }
             case "minecraft:all_of":{for(var c:o.getAsJsonArray("predicates"))if(groundCheck(c))return true;return false;}
             case "minecraft:any_of":{var cs=o.getAsJsonArray("predicates");if(cs.isEmpty())return false;for(var c:cs)if(!groundCheck(c))return false;return true;}

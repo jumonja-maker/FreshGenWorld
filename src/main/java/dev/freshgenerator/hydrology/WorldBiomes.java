@@ -21,10 +21,26 @@ public final class WorldBiomes {
     private WorldBiomes() { }
 
     public static BiomeResolver fallback(BiomeSource source, RandomState state, ChunkGenerator generator, BiomeResolver uncached) {
-        if (!(generator instanceof NoiseBasedChunkGenerator noise) || HydrologyDensity.field(state, noise.generatorSettings().value()) == null)
-            return uncached;
+        if (!(generator instanceof NoiseBasedChunkGenerator noise)) return uncached;
+        dev.freshgenerator.core.hydro.HydroField field = HydrologyDensity.field(state, noise.generatorSettings().value());
+        if (field == null) return uncached;
+        var shape = noise.generatorSettings().value().noiseSettings();
+        int maxQy = net.minecraft.core.QuartPos.fromBlock(shape.minY() + shape.height() - 1);
+        // The river and valley biomes the chunk will store, where the drainage model is built (HydroBiomes.wrapReady).
+        Holder<Biome>[] rivers = HydroBiomes.rivers(source);
+        var settings = noise.generatorSettings().value();
+        // One spare resolver is reused by the next lookup (code audit 26.11 OpenAI FG094-04: a new caching resolver and
+        // wrapper per lookup, even for the same position). A lookup takes it, so no two threads share its caching
+        // context; a second thread meanwhile makes its own. No thread-local: it dies with this level's fallback.
         return new BiomeResolver() {
-            @Override public Holder<Biome> getNoiseBiome(int qx, int qy, int qz) { return source.createCachingResolver(state).getNoiseBiome(qx, qy, qz); }
+            private final java.util.concurrent.atomic.AtomicReference<BiomeResolver> spare = new java.util.concurrent.atomic.AtomicReference<>();
+            @Override public Holder<Biome> getNoiseBiome(int qx, int qy, int qz) {
+                BiomeResolver r = spare.getAndSet(null);
+                if (r == null) r = HydroBiomes.wrapReady(source.createCachingResolver(state), field, rivers, maxQy,
+                        dev.freshgenerator.landform.IslandBiomes.of(state, settings, source));
+                try { return r.getNoiseBiome(qx, qy, qz); }
+                finally { spare.set(r); }
+            }
         };
     }
 }

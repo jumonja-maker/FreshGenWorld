@@ -41,6 +41,9 @@ public final class GlacialSurface {
             return;
         }
         var environment=new Environment(state,system,biomes,settings);
+        // No glacier on the hot ground of an active volcano (its summit crater and fresh flows): the ice filled the
+        // lava pit of seed 31337 X-2701 Z-7563 above its crust (blue ice, packed ice and snow up to 17 blocks).
+        var landforms=dev.freshgenerator.landform.LandformDensity.world(state,settings);
         var at=new BlockPos.MutableBlockPos();boolean changed=false;
         int x0=chunk.getPos().getMinBlockX(),z0=chunk.getPos().getMinBlockZ(),sea=system.getSeaLevel();
         for(int z=z0;z<z0+16;z++)for(int x=x0;x<x0+16;x++){
@@ -56,6 +59,7 @@ public final class GlacialSurface {
                     chunk.setBlockState(at,next);changed=true;
                 }
             }else if(h>=115){
+                if(landforms!=null&&landforms.hot(x,z))continue;
                 var ice=environment.land(x,z);
                 if(ice.thickness()==0)continue;
                 // Own audit 21.11: the bed is the real top of the column, not the model height. On slopes

@@ -19,12 +19,19 @@ import java.util.WeakHashMap;
  * about a block) - one cached lookup replaces evaluating the noises in every column that asks for the climate.
  * <p>Pure function of the input: node values do not depend on which thread or column computed them first. One node
  * cache per compile context (one per RandomState) and lattice. */
-public record LatticeDensity(DensityFunction input, int spacing) implements DensityFunction {
+public record LatticeDensity(DensityFunction input, int spacing, String interpolation) implements DensityFunction {
     public static final Identifier ID = Identifier.parse("freshgenerator:lattice");
+    /** Bilinear (the climate fields) or Catmull-Rom cubic: C1-continuous, so a coarse lattice shows no facets on the
+     * slopes of a terrain field (mountain ranges, user request 26.11). */
+    public static final String BILINEAR = "bilinear", CUBIC = "cubic";
     public static final MapCodec<LatticeDensity> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
             DensityFunction.CODEC.fieldOf("input").forGetter(LatticeDensity::input),
-            Codec.intRange(1, 4096).fieldOf("spacing").forGetter(LatticeDensity::spacing)
+            Codec.intRange(1, 4096).fieldOf("spacing").forGetter(LatticeDensity::spacing),
+            Codec.STRING.validate(v -> BILINEAR.equals(v) || CUBIC.equals(v) ? com.mojang.serialization.DataResult.success(v)
+                    : com.mojang.serialization.DataResult.error(() -> "freshgenerator:lattice interpolation must be bilinear or cubic, got " + v))
+                    .optionalFieldOf("interpolation", BILINEAR).forGetter(LatticeDensity::interpolation)
     ).apply(i, LatticeDensity::new));
+    public LatticeDensity(DensityFunction input, int spacing) { this(input, spacing, BILINEAR); }
 
     private static final Map<CompileContext, Map<LatticeDensity, Nodes>> NODES = new WeakHashMap<>();
 
@@ -34,15 +41,23 @@ public record LatticeDensity(DensityFunction input, int spacing) implements Dens
             Map<LatticeDensity, Nodes> byLattice = NODES.computeIfAbsent(context, c -> new HashMap<>());
             nodes = byLattice.get(this);
             if (nodes == null) {
-                nodes = new Nodes(input.compileSampler(context), spacing);
+                nodes = new Nodes(input.compileSampler(context), spacing, CUBIC.equals(interpolation));
                 byLattice.put(this, nodes);
             }
         }
         return new Sampler(nodes);
     }
-    @Override public DensityFunction rewriteChildren(DfRewriteRule rule) { return new LatticeDensity(rule.rewrite(input), spacing); }
-    /** Bilinear interpolation stays inside the bounds of the node values. */
-    @Override public Interval range() { return input.range(); }
+    @Override public DensityFunction rewriteChildren(DfRewriteRule rule) { return new LatticeDensity(rule.rewrite(input), spacing, interpolation); }
+    /** Bilinear interpolation stays inside the bounds of the node values; the cubic one overshoots by at most 25% of
+     * the node range. */
+    @Override public Interval range() {
+        Interval r = input.range();
+        if (!CUBIC.equals(interpolation) || !Float.isFinite(r.min()) || !Float.isFinite(r.max())) return r;
+        // Rows overshoot by 1/8 of the node range, the column of rows by 1/8 of theirs: 9/32 in all (OpenAI 26.11: 1.28125
+        // for nodes in 0..1 against a declared 1.25).
+        float pad = 0.28125f * (r.max() - r.min());
+        return Interval.encapsulating(r.min() - pad, r.max() + pad);
+    }
     @Override public int domainAxes() { return AXIS_X | AXIS_Z; }
     @Override public MapCodec<LatticeDensity> codec() { return CODEC; }
 
@@ -55,8 +70,9 @@ public record LatticeDensity(DensityFunction input, int spacing) implements Dens
         private final ThreadLocal<SamplerContext> context = ThreadLocal.withInitial(() -> SamplerContext.builder().enableCaches().build());
         private final DensitySampler input;
         private final int spacing;
+        private final boolean cubic;
         private final NodeTable table = new NodeTable();
-        Nodes(DensitySampler input, int spacing) { this.input = input; this.spacing = spacing; }
+        Nodes(DensitySampler input, int spacing, boolean cubic) { this.input = input; this.spacing = spacing; this.cubic = cubic; }
 
         private float node(int i, int j) {
             float v = table.get(i, j);
@@ -67,10 +83,23 @@ public record LatticeDensity(DensityFunction input, int spacing) implements Dens
         }
 
         float value(int x, int z) {
+            if (cubic) return cubicValue(x, z);
             int i = Math.floorDiv(x, spacing), j = Math.floorDiv(z, spacing);
             float a = node(i, j), b = node(i + 1, j), c = node(i, j + 1), d = node(i + 1, j + 1);
             double tx = (double) (x - i * spacing) / spacing, tz = (double) (z - j * spacing) / spacing;
             return (float) ((a + (b - a) * tx) * (1 - tz) + (c + (d - c) * tx) * tz);
+        }
+
+        /** Catmull-Rom over the 4 x 4 nodes around (x, z). */
+        private float cubicValue(int x, int z) {
+            int i = Math.floorDiv(x, spacing), j = Math.floorDiv(z, spacing);
+            double tx = (double) (x - i * spacing) / spacing, tz = (double) (z - j * spacing) / spacing;
+            double r0 = row(i, j - 1, tx), r1 = row(i, j, tx), r2 = row(i, j + 1, tx), r3 = row(i, j + 2, tx);
+            return (float) catmull(r0, r1, r2, r3, tz);
+        }
+        private double row(int i, int j, double t) { return catmull(node(i - 1, j), node(i, j), node(i + 1, j), node(i + 2, j), t); }
+        private static double catmull(double p0, double p1, double p2, double p3, double t) {
+            return p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
         }
     }
 

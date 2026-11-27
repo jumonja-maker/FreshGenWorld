@@ -101,8 +101,11 @@ public final class VillageTerrainPlan {
             BoundingBox b=pool.getBoundingBox();
             int ground=b.minY()+pool.getGroundLevelDelta();
             if(ground<settings.seaLevel()-4||ground>300)continue;
-            boolean rigid=pool.getElement().getProjection()==StructureTemplatePool.Projection.RIGID
-                &&(long)(b.maxX()-b.minX()+1)*(b.maxZ()-b.minZ()+1)>=16&&b.maxY()-b.minY()>=3;
+            // Every rigid piece holds the ground under it at its own level, lamps and flower beds too: their height comes
+            // from the ground before grading like a house's, and the grading toward neighbouring houses left 18% of them
+            // in the air - a savanna lamp 12 blocks up (code audit 25.11 Fable K-06; the native beard they would get is
+            // replaced by this plan).
+            boolean rigid=pool.getElement().getProjection()==StructureTemplatePool.Projection.RIGID;
             sites.add(new VillageTerrainModel.Site(b.minX(),b.minZ(),b.maxX(),b.maxZ(),ground,rigid));
         }
         return sites.isEmpty()?EMPTY:new VillageTerrainPlan(origin,new VillageTerrainModel(sites),settings,state);

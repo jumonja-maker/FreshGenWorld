@@ -28,6 +28,8 @@ public record HydrologyDensity(DensityFunction base, DensityFunction continents,
     public static final String TERRAIN = "terrain", DRY_BANKS = "dry_banks";
     public static final Identifier ID = Identifier.parse("freshgenerator:hydrology");
     public static final String LABEL = "FreshGenerator hydrology";
+    /** Margin beyond the walls of a rift within which no dry ground is carved below the sea level (HydroField). */
+    static final double RIFT_SHORE = 40;
     public static final MapCodec<HydrologyDensity> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
             DensityFunction.CODEC.fieldOf("base").forGetter(HydrologyDensity::base),
             DensityFunction.CODEC.fieldOf("continents").forGetter(HydrologyDensity::continents),
@@ -59,8 +61,10 @@ public record HydrologyDensity(DensityFunction base, DensityFunction continents,
             field = byInputs.get(key);
             if (field == null) {
                 long seed = context.createRandom(ID).nextLong();
-                Inputs inputs = new Inputs(base.compileSampler(context), continents.compileSampler(context), temperature.compileSampler(context),
-                        moisture.compileSampler(context), erosion.compileSampler(context));
+                DensitySampler ground = base.compileSampler(context);
+                // The landform model behind the ground (rifts and active lava craters are sinks of the network).
+                Inputs inputs = new Inputs(ground, continents.compileSampler(context), temperature.compileSampler(context),
+                        moisture.compileSampler(context), erosion.compileSampler(context), dev.freshgenerator.landform.LandformDensity.worldOf(ground));
                 field = new HydroField(new HydroModel(inputs, seed));
                 byInputs.put(key, field);
                 if (byInputs.size() > 1) LOG.warn("FreshGenerator hydrology: {} drainage models in one world (different inputs)", byInputs.size());
@@ -84,10 +88,17 @@ public record HydrologyDensity(DensityFunction base, DensityFunction continents,
      * check which node filled a slot: the second world could read the first one's height (audit 24.11 T-4). */
     private static final class Inputs implements HydroInputs {
         private final DensitySampler height, continents, temperature, moisture, erosion;
+        private final dev.freshgenerator.landform.LandformDensity.World landforms;
         private final ThreadLocal<SamplerContext> context = ThreadLocal.withInitial(() -> SamplerContext.builder().enableCaches().build());
-        Inputs(DensitySampler height, DensitySampler continents, DensitySampler temperature, DensitySampler moisture, DensitySampler erosion) {
+        Inputs(DensitySampler height, DensitySampler continents, DensitySampler temperature, DensitySampler moisture, DensitySampler erosion,
+               dev.freshgenerator.landform.LandformDensity.World landforms) {
             this.height = height; this.continents = continents; this.temperature = temperature; this.moisture = moisture; this.erosion = erosion;
+            this.landforms = landforms;
         }
+        @Override public boolean sink(int x, int z) { return landforms != null && landforms.sink(x, z); }
+        @Override public boolean seaFree(int x, int z) { return landforms != null && landforms.seaFree(x, z); }
+        @Override public boolean riftShore(int x, int z) { return landforms != null && landforms.nearRift(x, z, RIFT_SHORE); }
+        @Override public int[] snap(int cx, int cz, int half) { return landforms == null ? null : landforms.snapToRift(cx, cz, half); }
         public double height(int x, int z) { return height.sampleValue(context.get(), x, 0, z); }
         public double continents(int x, int z) { return continents.sampleValue(context.get(), x, 0, z); }
         public double temperature(int x, int z) { return temperature.sampleValue(context.get(), x, 0, z); }

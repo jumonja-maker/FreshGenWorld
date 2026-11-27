@@ -446,4 +446,69 @@ class HydroModelTest {
         // Mountains are classed by their cooled climate, like the biomes on them.
         assertEquals(HydroClimate.Setting.ALPINE, HydroClimate.setting(0.65, 0.4, 0.2, 250));
     }
+
+    /** A rift across the island (a sink of the landforms, 17 blocks wide, floor Y20): its axis nodes snap onto it. */
+    record Rifted(Field base, int x0, int x1, double floor, int half) implements HydroInputs {
+        boolean inside(int x, int z) { return x >= x0 && x <= x1 && Math.abs(z) < half; }
+        public double height(int x, int z) { return inside(x, z) ? floor : base.height(x, z); }
+        public double continents(int x, int z) { return base.continents(x, z); }
+        public double temperature(int x, int z) { return base.temperature(x, z); }
+        public double moisture(int x, int z) { return base.moisture(x, z); }
+        public double erosion(int x, int z) { return base.erosion(x, z); }
+        @Override public boolean sink(int x, int z) { return x >= x0 - 2 && x <= x1 + 2 && Math.abs(z) < half; }
+        @Override public int[] snap(int cx, int cz, int h) {
+            int axis = (x0 + x1) / 2;
+            return axis < cx - h || axis >= cx + h || Math.abs(cz) >= half ? null : new int[]{axis, cz};
+        }
+    }
+
+    @Test void riftIsADrySinkAndRiversKeepTheirLevelToItsWall() {
+        // Audit 26.11 (seed 31337 X-6980 Z1340, X-7470 Z1400): the reaches into a rift carved valleys down to its floor
+        // beside it (below the sea level: sea water stood in them against the dry rift as half-moon walls), and the
+        // drop came at a node 20-50 blocks before the brink.
+        Rifted in = new Rifted(island(0, 0.35), 600, 616, 20, 1500);
+        HydroModel m = new HydroModel(in, 42);
+        HydroField field = new HydroField(m);
+        HydroField.Column c = new HydroField.Column();
+        int wetOutside = 0, near = 0;
+        for (int z = -1400; z <= 1400; z += 3) {
+            for (int x = in.x0(); x <= in.x1(); x++) {
+                field.column(x, z, c);
+                if (c.wet()) assertTrue(c.water <= in.floor() + 4, "no lake or river above the rift floor inside it: " + x + "," + z + " water " + c.water);
+            }
+            for (int side = -1; side <= 1; side += 2) for (int d = 3; d <= 48; d += 3) {
+                int x = side < 0 ? in.x0() - d : in.x1() + d;
+                field.column(x, z, c);
+                near++;
+                // River valleys cut their usual depth; none is carved down toward the rift floor.
+                assertTrue(c.terrain >= c.base - 24 && c.terrain > in.floor() + 30,
+                        "no trench beside the rift: " + x + "," + z + " terrain " + c.terrain + " base " + c.base);
+                if (c.wet()) {
+                    wetOutside++;
+                    assertTrue(c.water > in.floor() + 30, "water beside the rift keeps its level: " + x + "," + z + " water " + c.water + " base " + c.base);
+                }
+            }
+        }
+        assertTrue(near > 0);
+        // The nodes on the rift axis end the flow: the deepest node of every group there is a dry basin.
+        for (int j = -40; j <= 40; j += 2) {
+            long k = HydroModel.nodeAt(608, j * HydroModel.SPACING);
+            if (!in.sink(m.x(k), m.z(k))) continue;
+            long d = m.down(k);
+            assertNotEquals(HydroModel.OCEAN_ID, d, "a rift node does not drain to the sea");
+        }
+    }
+
+
+    /** Fifth iteration (audit 26.11 Opus N-1/N-9): where the native sea fill is off, only the model's water stands. */
+    @Test void seaFreeColumnsHoldOnlyTheModelsWater() {
+        var c = new HydroField.Column();
+        c.terrain = 50; c.water = HydroModel.NO_WATER;
+        assertEquals(HydroModel.SEA_WATER, c.effectiveWater(), "ground below the sea holds sea water in game");
+        c.seaFree = true;
+        assertEquals(HydroModel.NO_WATER, c.effectiveWater(), "a rift or closed bowl stays dry");
+        assertFalse(c.wetIncludingSea());
+        c.water = 55;
+        assertEquals(55, c.effectiveWater(), "a pond of the model keeps its own level");
+    }
 }

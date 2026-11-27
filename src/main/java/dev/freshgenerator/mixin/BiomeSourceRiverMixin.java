@@ -35,7 +35,8 @@ abstract class BiomeSourceRiverMixin {
                                                @Local(argsOnly = true) Predicate<Holder<Biome>> wanted, @Local(argsOnly = true) BlockPos origin) {
         BiomeResolver resolver = original.call(self, state);
         HydroField field = HydrologyDensity.boundField(state);
-        BiomeResolver search = field != null ? HydroBiomes.search(resolver, field, self, wanted, origin) : resolver;
+        BiomeResolver search = field != null ? HydroBiomes.search(resolver, field, self, wanted, origin,
+                dev.freshgenerator.landform.IslandBiomes.of(state, dev.freshgenerator.landform.LandformDensity.boundWorld(state), self)) : resolver;
         freshgenerator$search.set(search instanceof HydroBiomes.Search s ? s : null);
         return search;
     }

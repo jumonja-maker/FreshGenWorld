@@ -34,7 +34,8 @@ abstract class NoiseChunkHydrologyMixin {
     private void freshgenerator$surfaceWater(RandomState state, Beardifier beard, NoiseGeneratorSettings settings,
                                              Aquifer.FluidPicker picker, Blender blender, DensityVolume volume, CallbackInfo callback) {
         HydroField field = HydrologyDensity.field(state, settings);
-        if (field != null) aquifer = new HydroAquifer(aquifer, field);
+        if (field != null) aquifer = new HydroAquifer(aquifer, field, dev.freshgenerator.landform.LandformDensity.world(state, settings),
+                dev.freshgenerator.landform.CaveRoomDensity.model(state, settings), settings.noiseSettings().minY() + 10);
     }
 
     @WrapOperation(method = "<init>", at = @At(value = "INVOKE", ordinal = 0,

@@ -6,12 +6,13 @@ import net.minecraft.world.level.levelgen.structure.StructureSet;
 import java.util.Set;
 import java.util.stream.Stream;
 
-/** Keeps each world on one family of ocean structure sets (audit 23.11): the current world uses the adapted
- * freshgenerator:shipwrecks / ocean_ruins / ocean_monuments (wider spacing, monument exclusion), every other world the
- * untouched native minecraft: sets. ChunkGenerator.createState marks which kind of world is being set up; the native
+/** Keeps each world on one family of adapted structure sets (audit 23.11): the current world uses the adapted
+ * freshgenerator:shipwrecks / ocean_ruins / ocean_monuments (wider spacing, monument exclusion) and, since 24.11,
+ * freshgenerator:villages / pillager_outposts (fewer villages, no clusters), every other world the untouched native
+ * minecraft: sets. ChunkGenerator.createState marks which kind of world is being set up; the native
  * structure state then filters the set list it builds. */
 public final class StructureSets {
-    private static final Set<String> NAMES = Set.of("shipwrecks", "ocean_ruins", "ocean_monuments");
+    private static final Set<String> NAMES = Set.of("shipwrecks", "ocean_ruins", "ocean_monuments", "villages", "pillager_outposts");
     private static final ThreadLocal<Boolean> CURRENT_WORLD = new ThreadLocal<>();
     private StructureSets() { }
 

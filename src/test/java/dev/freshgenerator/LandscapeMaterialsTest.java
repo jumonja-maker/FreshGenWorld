@@ -138,7 +138,11 @@ class LandscapeMaterialsTest {
   var old=WorldgenCatalog.compileTerrain(new VanillaAssets());var now=WorldgenCatalog.compile(new VanillaAssets());
   JsonObject original=old.get(LandscapeSurfaceCompiler.SURFACE).deepCopy().getAsJsonObject();
   JsonObject current=now.get(LandscapeSurfaceCompiler.SURFACE).deepCopy().getAsJsonObject();
-  JsonObject floor=current.getAsJsonArray("sequence").get(0).getAsJsonObject();
+  // 26.11: the ground cover of volcanoes and impact craters (floor and under-floor rules) comes first; it passes
+  // elsewhere, and under water it covers only submarine volcanoes (the rule decides, no deep-water guard).
+  for(int k=0;k<2;k++)assertEquals("freshgenerator:landform_surface",current.getAsJsonArray("sequence").get(k).getAsJsonObject()
+    .getAsJsonObject("then_run").get("type").getAsString());
+  JsonObject floor=current.getAsJsonArray("sequence").get(2).getAsJsonObject();
   assertEquals("minecraft:on_floor",floor.get("if_true").getAsString());
   JsonObject wooded=floor.getAsJsonObject("then_run").getAsJsonArray("sequence").get(0).getAsJsonObject();
   assertEquals("minecraft:wooded_badlands",wooded.getAsJsonObject("if_true").get("biome_is").getAsString());
@@ -159,6 +163,8 @@ class LandscapeMaterialsTest {
   // Update 19.11: and the under-floor sediment body inserted just before that branch.
   assertEquals("minecraft:under_floor",top.get(top.size()-2).getAsJsonObject().get("if_true").getAsString());
   top.remove(top.size()-2);
+  // 26.11: and the two landform cover rules at the head of the sequence.
+  top.remove(0);top.remove(0);
   assertEquals(original,current);
  }
  @Test void invalidSecondMaterialDoesNotPartiallyEnableFirst(){

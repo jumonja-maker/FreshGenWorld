@@ -14,7 +14,8 @@ import net.minecraft.world.level.levelgen.RandomState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
-/** River biomes from the drainage model when a chunk's biomes are filled (current world only). */
+/** River biomes from the drainage model and land biomes on volcanic islands when a chunk's biomes are filled
+ * (current world only). */
 @Mixin(ChunkGenerator.class)
 abstract class ChunkGeneratorHydrologyMixin {
     @WrapOperation(method = "doCreateBiomes", at = @At(value = "INVOKE",
@@ -23,7 +24,9 @@ abstract class ChunkGeneratorHydrologyMixin {
                                       @Local(argsOnly = true) RandomState state) {
         if ((Object) this instanceof NoiseBasedChunkGenerator generator) {
             HydroField field = HydrologyDensity.field(state, generator.generatorSettings().value());
-            if (field != null) resolver = HydroBiomes.wrap(resolver, field, generator.getBiomeSource());
+            if (field != null) resolver = HydroBiomes.wrap(resolver, field, generator.getBiomeSource(),
+                    net.minecraft.core.QuartPos.fromBlock(chunk.getMinY() + chunk.getHeight() - 1),
+                    dev.freshgenerator.landform.IslandBiomes.of(state, generator.generatorSettings().value(), generator.getBiomeSource()));
         }
         original.call(chunk, resolver);
     }

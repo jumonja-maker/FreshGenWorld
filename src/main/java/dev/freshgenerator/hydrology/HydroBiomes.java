@@ -9,11 +9,13 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.BiomeSource;
 
-/** River biomes from real channels: wide rivers (7+ blocks) get river, or frozen_river where the surrounding
- * biome is cold, in the quart cells around their water surface. Lakes keep the surrounding biome (they freeze
- * or not with it); small streams belong to the land they cross. */
+/** River biomes from real channels: rivers of 5+ blocks get river, or frozen_river where the surrounding biome is
+ * cold at the water's height, in the quart cells around their water surface. Lakes keep the surrounding biome (they
+ * freeze or not with it); small streams belong to the land they cross. Code audit 25.11 Fable K-08: at 7+ blocks the
+ * river biome covered 3% of the wet channels (4.85 km of 173.6 km on 144 km2, 0.26 km in the cold), and no search found
+ * a frozen river - a biome of the Adventuring Time advancement. */
 public final class HydroBiomes {
-    public static final double RIVER_WIDTH = 7;
+    public static final double RIVER_WIDTH = 5;
     /** Incision (blocks) from which a valley floor reads the biome of the original ground height. */
     public static final double INCISION = 8;
     private HydroBiomes() { }
@@ -27,16 +29,44 @@ public final class HydroBiomes {
         return false;
     }
 
-    public static BiomeResolver wrap(BiomeResolver original, HydroField field, BiomeSource source) {
+    /** The resolver a chunk fills its biomes from. maxQy is the chunk's top quart cell: the native resolver of a chunk
+     * reads a climate buffer of the chunk's own height without a bounds check (26.3 DensityVolume.indexUnchecked), so
+     * a valley floor's biome read from above the world top took the bottom of the neighbouring buffer column (deep_dark
+     * at Y251-270 in the gorges of icy peaks) or, in the chunk's last column, ran past the buffer: the biome step failed
+     * and the area never generated (audits 25.11 Opus N-1/KO-01, OpenAI: seed 161803398 X-3605 Z-4377). */
+    public static BiomeResolver wrap(BiomeResolver original, HydroField field, BiomeSource source, int maxQy) {
+        return wrap(original, field, source, maxQy, null);
+    }
+    /** The same with the land biomes of volcanic islands (null: none). */
+    public static BiomeResolver wrap(BiomeResolver original, HydroField field, BiomeSource source, int maxQy,
+                                     dev.freshgenerator.landform.IslandBiomes islands) {
         Holder<Biome>[] rivers = rivers(source);
         if (rivers == null) return original;
         HydroField.Column c = new HydroField.Column();
-        return (qx, qy, qz) -> stored(original, field, c, qx, qy, qz, rivers);
+        return (qx, qy, qz) -> stored(original, field, c, qx, qy, qz, rivers, maxQy, islands);
+    }
+
+    /** The level's fallback resolver for unloaded chunks: the river and valley biomes the chunk will store where the
+     * drainage model of the column is already built, the source biome elsewhere - a lookup never builds the model (an
+     * explorer map makes 16 384 lookups over unexplored land). Audits 25.11 K4, OpenAI code 1, Opus KO-06: a river
+     * column read as beach before its chunk loaded (seed 42 X2970 Z2486). */
+    public static BiomeResolver wrapReady(BiomeResolver original, HydroField field, BiomeSource source, int maxQy) {
+        return wrapReady(original, field, rivers(source), maxQy);
+    }
+    static BiomeResolver wrapReady(BiomeResolver original, HydroField field, Holder<Biome>[] rivers, int maxQy) {
+        return wrapReady(original, field, rivers, maxQy, null);
+    }
+    static BiomeResolver wrapReady(BiomeResolver original, HydroField field, Holder<Biome>[] rivers, int maxQy,
+                                   dev.freshgenerator.landform.IslandBiomes islands) {
+        if (rivers == null) return original;
+        HydroField.Column c = new HydroField.Column();
+        return (qx, qy, qz) -> field.ready((qx << 2) + 2, (qz << 2) + 2)
+                ? stored(original, field, c, qx, qy, qz, rivers, maxQy, islands) : original.getNoiseBiome(qx, qy, qz);
     }
 
     /** {river, frozen_river (or river)} of a source, or null when it has no river. */
     @SuppressWarnings("unchecked")
-    private static Holder<Biome>[] rivers(BiomeSource source) {
+    static Holder<Biome>[] rivers(BiomeSource source) {
         Holder<Biome> river = null, frozen = null;
         for (Holder<Biome> h : source.possibleBiomes()) {
             String id = h.unwrapKey().map(k -> k.identifier().toString()).orElse("");
@@ -48,25 +78,44 @@ public final class HydroBiomes {
 
     /** The biome a chunk stores at a quart cell: the source biome (shifted by the incision of deep valleys) or the
      * river biome over the water of a wide river. */
-    private static Holder<Biome> stored(BiomeResolver original, HydroField field, HydroField.Column c, int qx, int qy, int qz, Holder<Biome>[] rivers) {
+    private static Holder<Biome> stored(BiomeResolver original, HydroField field, HydroField.Column c, int qx, int qy, int qz, Holder<Biome>[] rivers, int maxQy,
+                                        dev.freshgenerator.landform.IslandBiomes islands) {
         field.column((qx << 2) + 2, (qz << 2) + 2, c);
+        return fromColumn(original, c, qx, qy, qz, rivers, maxQy, islands);
+    }
+
+    /** The stored biome of a quart cell for a known drainage column (package-private for the tests). */
+    static Holder<Biome> fromColumn(BiomeResolver original, HydroField.Column c, int qx, int qy, int qz, Holder<Biome>[] rivers, int maxQy) {
+        return fromColumn(original, c, qx, qy, qz, rivers, maxQy, null);
+    }
+    static Holder<Biome> fromColumn(BiomeResolver original, HydroField.Column c, int qx, int qy, int qz, Holder<Biome>[] rivers, int maxQy,
+                                    dev.freshgenerator.landform.IslandBiomes islands) {
         // Biome depth and the deep climate count from the ground before the rivers: the floor and walls of a deep
         // valley would read as underground (another climate, cave biomes). They take the biome of the height
-        // the original ground had there, shifted by the incision (audit 22.11 B-3).
+        // the original ground had there, shifted by the incision (audit 22.11 B-3), never above the top cell of the
+        // world (everything shifted past it is open air over the original ground: the top cell reads the same).
         double cut = c.base - c.terrain;
         int y = (qy << 2) + 2;
         Holder<Biome> base = cut >= INCISION && y >= c.terrain - 24 && y <= c.base
-                ? original.getNoiseBiome(qx, qy + (int) Math.round(cut / 4), qz) : original.getNoiseBiome(qx, qy, qz);
+                ? original.getNoiseBiome(qx, Math.min(qy + (int) Math.round(cut / 4), Math.max(qy, maxQy)), qz) : original.getNoiseBiome(qx, qy, qz);
+        // Island ground keeps no ocean biome (IslandBiomes), in the whole column: the cells under the island kept
+        // cold_ocean in its rock and /locate cold_ocean pointed into the island at Y48 (seed 7391827364 X-2781 Z-5304).
+        // So does the floor of a bowl closed above the sea (seaFree: a dry caldera at Y58 kept the ocean biome, audit 27.11
+        // Opus N-2).
+        if (islands != null && (c.base >= HydroModel.SEA_LEVEL || c.seaFree)) base = islands.on(base, qx, qy, qz, c.base, c.seaFree);
         if ((c.kind != HydroField.RIVER && c.kind != HydroField.POOL) || !c.wet() || c.width < RIVER_WIDTH) return base;
         // The river ends at the coast: where the ground before the river lies below the sea, the last reach runs on
         // to its lattice node in the sea - a straight strip of river biome over the sea floor (seed 42 X2900
         // Z2482, audit 23.11).
         if (c.base < HydroModel.SEA_LEVEL) return base;
         if (y < c.water - 16 || y > c.water + 8) return base;
-        return riverFor(base, rivers);
+        return riverFor(base, rivers, (qx << 2) + 2, c.water, (qz << 2) + 2);
     }
-    private static Holder<Biome> riverFor(Holder<Biome> base, Holder<Biome>[] rivers) {
-        return base.value().getBaseTemperature() < 0.15f ? rivers[1] : rivers[0];
+    /** River or frozen river by the surrounding biome's own temperature at the water surface - the height-adjusted
+     * rule of snow and ice, as for lakes (HydroIce): a river at Y160 in windswept hills or above Y208 in taiga stayed a
+     * river among frozen water and snow (code audit 25.11 K6). */
+    private static Holder<Biome> riverFor(Holder<Biome> base, Holder<Biome>[] rivers, int x, int water, int z) {
+        return base.value().warmEnoughToRain(new BlockPos(x, water, z), (int) HydroModel.SEA_LEVEL) ? rivers[0] : rivers[1];
     }
 
     /** One biome search (/locate biome) in the current world: a resolver for BiomeSource.findClosestBiome3d and the
@@ -93,6 +142,8 @@ public final class HydroBiomes {
         private final int ox, oz;
         private final HydroField.Column c = new HydroField.Column();
         private final java.util.HashMap<Long, int[]> hits = new java.util.HashMap<>();
+        /** Land biomes of volcanic islands, as the chunks store them (null: none). */
+        private dev.freshgenerator.landform.IslandBiomes islands;
         private volatile boolean done;
         private boolean prefetching;
 
@@ -109,7 +160,10 @@ public final class HydroBiomes {
             boolean near = (long) (bx - ox) * (bx - ox) + (long) (bz - oz) * (bz - oz) <= (long) RADIUS * RADIUS;
             if (!riverSearch) {
                 Holder<Biome> base = original.getNoiseBiome(qx, qy, qz);
-                return near && wanted.test(base) ? stored(original, field, c, qx, qy, qz, rivers) : base;
+                // An ocean biome of the source over a volcano may be island land in the chunks: the stored biome answers
+                // (code audits 27.11 Opus KO-06, OpenAI K-02: /locate found frozen_ocean where the chunks hold snowy_taiga).
+                boolean island = islands != null && near && base.is(net.minecraft.tags.BiomeTags.IS_OCEAN) && islands.mayBeIsland(bx, bz);
+                return near && (wanted.test(base) || island) ? stored(original, field, c, qx, qy, qz, rivers, Integer.MAX_VALUE, islands) : base;
             }
             if (!near) return onlyRivers ? unwanted : original.getNoiseBiome(qx, qy, qz);
             if (!prefetching) { prefetching = true; prefetch(field, ox, oz, this); }
@@ -122,10 +176,11 @@ public final class HydroBiomes {
                 if (n != null) river = new int[]{(int) n[0], (int) n[2], (int) n[1]};
             }
             if (river != null) {
-                Holder<Biome> r = riverFor(original.getNoiseBiome(QuartPos.fromBlock(river[0]), QuartPos.fromBlock(river[1]), QuartPos.fromBlock(river[2])), rivers);
+                Holder<Biome> r = riverFor(original.getNoiseBiome(QuartPos.fromBlock(river[0]), QuartPos.fromBlock(river[1]), QuartPos.fromBlock(river[2])),
+                        rivers, river[0], river[1], river[2]);
                 if (wanted.test(r)) { hits.put(key(qx, qz), river); return r; }
             }
-            return onlyRivers ? unwanted : stored(original, field, c, qx, qy, qz, rivers);
+            return onlyRivers ? unwanted : stored(original, field, c, qx, qy, qz, rivers, Integer.MAX_VALUE, null);
         }
 
         /** The search result with a river hit moved onto the river itself; ends the prefetch of this search. */
@@ -141,9 +196,16 @@ public final class HydroBiomes {
 
     /** The search resolver of a findClosestBiome3d call from origin (the source resolver when the source has no river). */
     public static BiomeResolver search(BiomeResolver original, HydroField field, BiomeSource source, java.util.function.Predicate<Holder<Biome>> wanted, BlockPos origin) {
+        return search(original, field, source, wanted, origin, null);
+    }
+    /** The same with the land biomes of volcanic islands (null: none). */
+    public static BiomeResolver search(BiomeResolver original, HydroField field, BiomeSource source, java.util.function.Predicate<Holder<Biome>> wanted, BlockPos origin,
+                                       dev.freshgenerator.landform.IslandBiomes islands) {
         Holder<Biome>[] rivers = rivers(source);
         if (rivers == null) return original;
-        return new Search(original, field, source, wanted, rivers, origin.getX(), origin.getZ());
+        Search s = new Search(original, field, source, wanted, rivers, origin.getX(), origin.getZ());
+        s.islands = islands;
+        return s;
     }
 
     /** Builds the query tiles of the drainage model ring by ring around the search origin, up to RADIUS, on a shared

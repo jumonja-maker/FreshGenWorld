@@ -39,10 +39,19 @@ class KarstCaveTest {
         var before = new TreeMap<>(WorldgenCatalog.compileTerrain(new VanillaAssets()));
         SurfaceOnlyCompiler.apply(before); LandscapeTerrainCompiler.apply(before); LandscapeBiomeCompiler.apply(before);
         LandscapeSurfaceCompiler.apply(before); TerrainRealismCompiler.apply(before); BiomeReliefCompiler.apply(before); ClimateNicheCompiler.apply(before);
-        TerrainRepairCompiler.apply(before); HighlandClimateCompiler.apply(before); SnowMassifCompiler.apply(before); OceanFloorCompiler.apply(before); OceanStructureCompiler.apply(before, new VanillaAssets()); DryLandCompiler.apply(before); ClimateShapeCompiler.apply(before); HydrologyCompiler.apply(before); DefaultWorldCompiler.apply(before);
+        TerrainRepairCompiler.apply(before); HighlandClimateCompiler.apply(before); SnowMassifCompiler.apply(before); MountainRangeCompiler.apply(before); DesertCompiler.applyRelief(before); OceanFloorCompiler.apply(before); OceanStructureCompiler.apply(before, new VanillaAssets()); VillageStructureCompiler.apply(before, new VanillaAssets()); VolcanicVentCompiler.apply(before); DryLandCompiler.apply(before); LandformCompiler.apply(before); ClimateShapeCompiler.apply(before); DesertCompiler.applyClimate(before); EcotoneBorderCompiler.apply(before); HydrologyCompiler.apply(before); DeepWorldCompiler.apply(before, new VanillaAssets()); DefaultWorldCompiler.apply(before);
         var changed = new TreeSet<String>();
         before.forEach((k, val) -> { if (!val.equals(pack.get(k))) changed.add(k); });
-        assertEquals(KarstCaveCompiler.REPLACED, changed);
+        // The speleo layer adds the debug label of the chamber density to the noise settings (the aquifer finds the
+        // chamber model through it: dry domes) - nothing else of the settings changes.
+        var expected = new TreeSet<>(KarstCaveCompiler.REPLACED);
+        expected.add(SurfaceOnlyCompiler.SETTINGS);
+        assertEquals(expected, changed);
+        var settings = pack.get(SurfaceOnlyCompiler.SETTINGS).deepCopy().getAsJsonObject();
+        var debug = settings.getAsJsonArray("debug_functions");
+        for (int i = debug.size() - 1; i >= 0; i--)
+            if (debug.get(i).getAsJsonObject().get("label").getAsString().equals(SpeleoCaveCompiler.ROOM_LABEL)) debug.remove(i);
+        assertEquals(before.get(SurfaceOnlyCompiler.SETTINGS), settings, "only the chamber label is added to the settings");
         for (String k : pack.keySet()) if (!before.containsKey(k)) assertTrue(k.contains("/highlands_v2/karst/"), k);
         assertFalse(pack.keySet().stream().anyMatch(k -> k.contains("/cave_network/")), "Old network is not installed");
         assertEquals("minecraft:beardifier", pack.get(SurfaceOnlyCompiler.FINAL_DENSITY).getAsJsonObject().getAsJsonObject("right").get("type").getAsString());
@@ -57,7 +66,7 @@ class KarstCaveTest {
     }
     @Test void bottomStaysSealedAboveBedrock() {
         var v = world(100); plan(v, 0); v.put("noise:" + K + "pit_great", 1.); v.put("noise:" + K + "size", -1.);
-        for (double y = -64; y < KarstModel.FLOOR_Y - 1; y += 1) assertTrue(body(v, y) > 0, "floor " + y);
+        for (double y = DeepWorldCompiler.MIN_Y; y < SpeleoCaveCompiler.FLOOR_Y - 1; y += 1) assertTrue(body(v, y) > 0, "floor " + y);
     }
     @Test void threeStackedLevelsAreSeparatedByRockWithoutPits() {
         var v = world(100); plan(v, 0);
@@ -201,6 +210,14 @@ class KarstCaveTest {
     }
 
     static String path(String id) { return VanillaAssets.path("density_function", id); }
+    /** Noises of the 26.11 layers that a karst test leaves unset: the karst main and deep levels stay present, the new
+     * levels, spongework, mazes, canyons, pits, escarpments, ranges and deserts stay closed or flat (noise 0, the new
+     * level presence -1). Any other unset noise is still an error. */
+    static Double unsetNoise(String id) {
+        if (id.startsWith(K + "speleo/")) return id.endsWith("presence_lower") || id.endsWith("presence_abyss") ? -1.0 : 0.0;
+        if (id.contains("/landscape/escarpment/") || id.contains("/landscape/range/") || id.contains("/landscape/desert/")) return 0.0;
+        return null;
+    }
     // Node values within one top-level evaluation are memoised: field-shifted noises read the
     // junction offset many times, which made the plain recursion exponential.
     private static final Map<String, Double> MEMO = new HashMap<>();
@@ -220,7 +237,12 @@ class KarstCaveTest {
         }
         var o = n.getAsJsonObject(); String t = o.get("type").getAsString();
         switch (t) {
-            case "minecraft:cache", "minecraft:interpolated": return eval(o.get("input"), v);
+            case "minecraft:cache", "minecraft:interpolated", "freshgenerator:lattice": return eval(o.get("input"), v);
+            // Layers of 26.11 over the terrain and caves: no landform, dune or great chamber at a test point.
+            case "freshgenerator:landforms": return eval(o.get("height"), v);
+            case "freshgenerator:dunes": return 0;
+            case "freshgenerator:cave_rooms": return "shell".equals(o.get("output").getAsString()) ? 0 : 2;
+            case "minecraft:sqrt": return Math.sqrt(Math.max(0, eval(o.get("input"), v)));
             case "minecraft:abs": return Math.abs(eval(o.get("input"), v));
             case "minecraft:lerp": { double a = eval(o.get("alpha"), v), f = eval(o.get("first"), v); return f + a * (eval(o.get("second"), v) - f); }
             case "minecraft:square": { double x = eval(o.get("input"), v); return x * x; }
@@ -229,7 +251,8 @@ class KarstCaveTest {
                 // Locally linear noise: shifts (constant or field, e.g. the junction offset) use a
                 // per-noise gradient (default 0.008 per block along x); level warps are 0 here.
                 String id = o.get("noise").getAsString();
-                double base = Objects.requireNonNull(v.get("noise:" + id), id);
+                Double given = v.get("noise:" + id);
+                double base = given != null ? given : Objects.requireNonNull(unsetNoise(id), id);
                 if (!o.has("shift_x")) return base;
                 // Default: the two gallery families cross at right angles (plan_b varies along z).
                 boolean b = id.endsWith("plan_b");

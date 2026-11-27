@@ -86,16 +86,33 @@ public final class HydroModel {
     static long hashed(long key) { key *= 0x9E3779B97F4A7C15L; return key ^ (key >>> 29); }
     static int idx(long key) { return Math.floorMod(ni(key), TILE) + TILE * Math.floorMod(nj(key), TILE); }
 
+    private static final int[] AVG_X = {0, 12, -12, 0, 0}, AVG_Z = {0, 0, 0, 12, -12};
     private Tile sample(int ti, int tj) {
         Tile tile = new Tile();
         for (int b = 0; b < TILE; b++) for (int a = 0; a < TILE; a++) {
             int i = ti * TILE + a, j = tj * TILE + b, k = a + TILE * b;
             int x = i * SPACING + SPACING / 2 + jitter(i, j, 0x51ED), z = j * SPACING + SPACING / 2 + jitter(i, j, 0x7A3B);
+            // A rift crossing the cell takes its node onto its floor (inside the cell): the lattice sees rifts narrower
+            // than its spacing as a chain of pits, and rivers end in them instead of being carried over a chasm.
+            int[] sunk = inputs.snap(i * SPACING + SPACING / 2, j * SPACING + SPACING / 2, SPACING / 2);
+            if (sunk != null) { x = sunk[0]; z = sunk[1]; }
             tile.x[k] = x; tile.z[k] = z;
             // Node elevation: a 5-point average (radius 12) - sub-lattice relief does not create false pits.
             // Sampled directly (5 field evaluations, not 20 grid corners): a lattice-level estimate needs no exact
-            // block-scale interpolation (block-scale checks use BaseTerrain).
-            double h = (inputs.height(x, z) + inputs.height(x + 12, z) + inputs.height(x - 12, z) + inputs.height(x, z + 12) + inputs.height(x, z - 12)) / 5;
+            // block-scale interpolation (block-scale checks use BaseTerrain). A node on a rift floor takes the floor.
+            // Beside a rift its floor is left out of the average: one sample on a floor 90 blocks down set the node 20
+            // blocks under the ground and its river was incised that deep beside the rift.
+            double h;
+            if (sunk != null) h = inputs.height(x, z);
+            else {
+                double sum = 0; int n = 0;
+                for (int s = 0; s < 5; s++) {
+                    int sx = x + AVG_X[s], sz = z + AVG_Z[s];
+                    if (s > 0 && inputs.sink(sx, sz)) continue;
+                    sum += inputs.height(sx, sz); n++;
+                }
+                h = sum / n;
+            }
             tile.h[k] = (float) h;
             tile.c[k] = (float) inputs.continents(x, z);
             tile.t[k] = (float) inputs.temperature(x, z);
@@ -372,6 +389,9 @@ public final class HydroModel {
         // Search budget exhausted: the outlet is unknown. The basin stays without a water body (DRY, see decide)
         // instead of a lake whose level and outlet were never found.
         else if (f.beyond == NONE) kind = Group.BASIN;
+        // A rift or an active lava crater: the water that reaches it ends there - a dry basin with no lake level (no
+        // block-scale fill either), whatever the climate.
+        else if (inputs.sink(x(deepest), z(deepest))) kind = Group.BASIN;
         // Flash floods pass shallow desert hollows; only deep closed basins end in playas - and only when the hollow
         // is closed on the block scale too (otherwise the floods pass through it).
         else if (arid) {
@@ -583,7 +603,12 @@ public final class HydroModel {
                     f.next++;
                     continue;
                 }
-                if (onStack.contains(d)) { f.next++; continue; }
+                if (onStack.contains(d)) {
+                    // A cycle of flow: the donor is skipped as everywhere else, but reported (code audit 25.11 Fable K-13).
+                    dev.freshgenerator.core.Diagnostics.broken("hydro-accumulate-cycle", "FreshGenerator water: a cycle of flow in the drainage model; its area is not counted twice");
+                    f.next++;
+                    continue;
+                }
                 stack.push(d instanceof Group g ? new Frame(0, g) : new Frame((Long) d, null));
                 onStack.add(d);
                 pushed = true;
@@ -714,6 +739,9 @@ public final class HydroModel {
     double[] pathPoint(long key) {
         double x = x(key), z = z(key);
         if (channel(key) == 0) return new double[]{x, z};
+        // A node in a sink (a rift, moved onto its axis) stays there: averaged with its donor the path point left the
+        // rift, and the drop into it came before its wall.
+        if (inputs.sink((int) x, (int) z)) return new double[]{x, z};
         long md = mainDonor(key), dn = down(key);
         if (dn == OCEAN_ID || dn == BASIN_FLAG) { byte r = receiver(key); dn = r >= 0 && r < 8 ? nb(key, r) : NONE; }
         if (md == NONE || dn == NONE) return new double[]{x, z};
@@ -1059,4 +1087,6 @@ public final class HydroModel {
     }
 
     public int tilesCached() { return tiles.size(); }
+    /** Ground of a column before the drainage carving (the terrain the model starts from; cheap, no model tiles). */
+    public double groundAt(int x, int z) { return terrain.at(x, z); }
 }

@@ -33,6 +33,11 @@ public final class SnowMassifCompiler {
     /** Belt contours (belt height = H + BELT_COLD_SHIFT x coldness): temperate mountains get slopes
      * from Y168 and peaks from Y212, cold regions from Y143 and Y187; each switch takes +-BELT_EDGE of height. */
     public static final double BELT_SLOPE = 168, BELT_PEAK = 212, BELT_EDGE = .5;
+    /** High ground: from HIGH_IN to HIGH_FULL blocks of belt height the cap and the weirdness push act at any weirdness
+     * (audit 26.11 Opus N-3: plains and forest up to Y235 under an icy summit - 23% of the land above Y180, 31.5% on
+     * volcano flanks - wherever |W| < 0.3 kept the native rows). The valley-band guard dates from the river slice of the
+     * biome table, which the drainage model replaced (22.11). */
+    public static final double HIGH_IN = BELT_SLOPE + 8, HIGH_FULL = BELT_SLOPE + 22;
     /** Erosion floor below the slope contour (just above the slope row, native -0.375) and the
      * |weirdness| over which it fades in (valley band |W| &lt; 0.05 untouched). */
     public static final double FLOOR_E = -.37, W_FLOOR_IN = .05, W_FLOOR_FULL = .0502;
@@ -107,7 +112,9 @@ public final class SnowMassifCompiler {
         // Cap (slope rows above the slope contour, peak rows above the peak contour) in the mountain band;
         // the gate fades it in over |W| 0.3..0.4 (continuous inputs at the guard edge, audit R6).
         node(staged, "belt_gate", cache(spline(M + "belt_abs_w", new double[][]{{.3, 0, 0}, {.4, 1, 0}})));
-        node(staged, "belt_erosion_cap", cache(add(1, mul(M + "belt_gate", add(-1, obj("type", "minecraft:min",
+        node(staged, "belt_high", cache(spline(bh, new double[][]{{HIGH_IN, 0, 0}, {HIGH_FULL, 1, 0}})));
+        node(staged, "belt_gate_high", cache(obj("type", "minecraft:max", "left", M + "belt_gate", "right", M + "belt_high")));
+        node(staged, "belt_erosion_cap", cache(add(1, mul(M + "belt_gate_high", add(-1, obj("type", "minecraft:min",
                 "left", spline(bh, new double[][]{{BELT_SLOPE - BELT_EDGE, 1, 0}, {BELT_SLOPE + BELT_EDGE, -.6, 0}}),
                 "right", spline(bp, new double[][]{{BELT_PEAK - BELT_EDGE, 1, 0}, {BELT_PEAK + BELT_EDGE, -.9, 0}})))))));
         // Evaluated only where it can act (range_choice); the router erosion is also read by the
@@ -118,7 +125,7 @@ public final class SnowMassifCompiler {
         // Weirdness: high band (slopes, not peaks, on the slope rows) from just below the slope contour,
         // peak band from the peak contour.
         node(staged, "belt_target", cache(spline(bp, new double[][]{{BELT_PEAK - BELT_EDGE, W_HIGH, 0}, {BELT_PEAK + BELT_EDGE, W_PEAK, 0}})));
-        node(staged, "belt_weight", cache(mul(M + "belt_gate", obj("type", "minecraft:max",
+        node(staged, "belt_weight", cache(mul(M + "belt_gate_high", obj("type", "minecraft:max",
                 "left", spline(bh, new double[][]{{BELT_SLOPE - 3 * BELT_EDGE, 0, 0}, {BELT_SLOPE - BELT_EDGE, 1, 0}}),
                 "right", spline(bp, new double[][]{{BELT_PEAK - 3 * BELT_EDGE, 0, 0}, {BELT_PEAK - BELT_EDGE, 1, 0}})))));
         node(staged, "belt_ridges", cache(ridgesGuard(ridgesIn, bp, add(ridgesIn, mul(M + "belt_weight", add(obj("type", "minecraft:range_choice", "input", ridgesIn,
@@ -162,12 +169,16 @@ public final class SnowMassifCompiler {
     private static JsonObject erosionGuard(String erosion, String bh, Object inside) {
         return range(M + "belt_abs_w", W_FLOOR_IN, 2.0,
                 range(erosion, -2.0, FLOOR_E, inside,
-                        range(M + "belt_abs_w", .3, 2.0, range(bh, BELT_SLOPE - BELT_EDGE, 1.0e6, inside, erosion), erosion)),
-                erosion);
+                        range(M + "belt_abs_w", .3, 2.0, range(bh, BELT_SLOPE - BELT_EDGE, 1.0e6, inside, erosion), high(bh, inside, erosion))),
+                high(bh, inside, erosion));
+    }
+    /** The belt value on high ground at any weirdness, the given value below it. */
+    private static JsonObject high(String bh, Object inside, Object below) {
+        return range(bh, HIGH_IN, 1.0e6, inside, below);
     }
     /** Belt weirdness only in the mountain band from just below the slope contour. */
     private static JsonObject ridgesGuard(String ridges, String bh, Object inside) {
-        return range(M + "belt_abs_w", .3, 2.0, range(bh, BELT_SLOPE - 3 * BELT_EDGE, 1.0e6, inside, ridges), ridges);
+        return range(M + "belt_abs_w", .3, 2.0, range(bh, BELT_SLOPE - 3 * BELT_EDGE, 1.0e6, inside, ridges), high(bh, inside, ridges));
     }
     private static JsonObject range(String input, double min, double max, Object in, Object out) {
         return obj("type", "minecraft:range_choice", "input", input, "min_inclusive", min, "max_exclusive", max, "when_in_range", in, "when_out_of_range", out);

@@ -56,12 +56,15 @@ public final class HydroField {
          * counts its low-bank terms from it (code audit 24.11 F1: eight rays missed the water between them and took the
          * sea level beside a stream at Y75). */
         public int nearWater = HydroModel.NO_WATER;
+        /** Ground below the sea level here holds no sea water (HydroInputs.seaFree): rifts and closed crater bowls. */
+        public boolean seaFree;
         /** 0 next to water, 1 from 28 blocks away (cave entrances keep clear of rivers and lakes). */
         public double dryBanks() { return HydroClimate.smooth(12, 28, wetDistance); }
         public boolean wet() { return water != HydroModel.NO_WATER && terrain <= water; }
-        /** Top water block including the native sea fill (every column below Y63 holds sea water in game). */
+        /** Top water block including the native sea fill (every column below Y63 holds sea water in game, except
+         * where the fill is off: seaFree). */
         public int effectiveWater() {
-            int sea = terrain < HydroModel.SEA_LEVEL ? HydroModel.SEA_WATER : HydroModel.NO_WATER;
+            int sea = !seaFree && terrain < HydroModel.SEA_LEVEL ? HydroModel.SEA_WATER : HydroModel.NO_WATER;
             return wet() ? Math.max(water, sea) : sea;
         }
         public boolean wetIncludingSea() { return effectiveWater() != HydroModel.NO_WATER && terrain <= effectiveWater(); }
@@ -271,7 +274,7 @@ public final class HydroField {
     }
     private static void copy(Column a, Column b) {
         b.base = a.base; b.terrain = a.terrain; b.water = a.water; b.kind = a.kind; b.channelDistance = a.channelDistance; b.wetDistance = a.wetDistance; b.width = a.width;
-        b.hold = a.hold; b.nearWater = a.nearWater;
+        b.hold = a.hold; b.nearWater = a.nearWater; b.seaFree = a.seaFree;
     }
 
     private void evaluate(int x, int z, Column out) {
@@ -279,15 +282,29 @@ public final class HydroField {
         double h0 = model.terrain.at(x, z);
         out.base = h0; out.terrain = h0; out.water = HydroModel.NO_WATER; out.kind = NONE; out.channelDistance = Double.POSITIVE_INFINITY;
         out.wetDistance = Double.POSITIVE_INFINITY; out.width = 0; out.nearWater = HydroModel.NO_WATER;
+        out.seaFree = model.inputs.seaFree(x, z);
         Tile t = tile(x, z);
         Scratch scratch = SCRATCH.get();
         double[] tmp = scratch.tmp, pr = scratch.pr, ev = scratch.ev;
         int count = 0;
         HydroReach[] found = scratch.found;
+        // A column outside the sinks of the landforms (rifts, lava craters) sees each reach only up to the sink's edge.
+        boolean sunk = model.inputs.sink(x, z);
         for (HydroReach r : t.reaches) {
             if (!r.inBox(x, z)) continue;
             r.project(x, z, pr);
             if (pr[0] > r.influence) continue;
+            if (!sunk) {
+                // Outside: not the sink's own drainage, and the reaches running into it only up to its edge.
+                if (r.fromSink(model)) continue;
+                double sa = r.sinkArc(model);
+                if (pr[1] >= sa) {
+                    if (sa <= 0) continue;
+                    double[] q = r.pointAt(sa);
+                    pr[0] = Math.hypot(x - q[0], z - q[1]); pr[1] = sa; pr[2] = Math.min(pr[2], sa);
+                    if (pr[0] > r.influence) continue;
+                } else if (pr[2] > sa) pr[2] = sa;
+            } else if (!r.fromSink(model)) continue; // inside: only the sink's own reaches (the others end at its wall)
             int slot = count;
             if (count == found.length) {
                 // Full (dense confluences): keep the nearest candidates, never drop a near reach for a far one.
@@ -398,11 +415,38 @@ public final class HydroField {
                 break;
             }
         }
+        // Plunge pools under the waterfalls rivers pour into a sink (a rift): a bowl in its floor at the foot of the wall,
+        // filled to a block under the lowest floor round it. The falling water landed on the dry floor and spread over a
+        // few blocks; now it falls into standing water.
+        if (sunk && water == HydroModel.NO_WATER) {
+            for (HydroReach r : t.reaches) {
+                if (!r.wet || !r.inBox(x, z) || !r.intoSink(model)) continue;
+                double[] pool = r.riftPool(model);
+                if (pool == null) continue;
+                double d = Math.hypot(x - pool[0], z - pool[1]);
+                if (d >= pool[2]) continue;
+                double u = d / pool[2], bed = pool[3] - 1 - HydroReach.POOL_DEPTH * (1 - u * u);
+                terrain = Math.min(terrain, bed);
+                water = (int) pool[3]; hold = water; kind = POOL;
+                out.wetDistance = 0; out.nearWater = water; out.width = 2 * pool[2];
+                break;
+            }
+        }
         // Exact (chamfer) distance to every nearby lake: no shore shape slips between probes.
         if (out.wetDistance > 0) for (HydroModel.Group g : t.lakes) {
             double dd = g.mask.distance(x, z);
             if (dd < out.wetDistance) { out.wetDistance = dd; out.nearWater = g.mask.level; }
         }
+        // Near a rift a river valley carved below the sea level stood as native sea water against the dry band of the
+        // rift (seed 248163264 X2880 Z-8365: ground 68 carved to 58.5 twenty blocks from a river, a wall of water over
+        // the rift). The rift keeps away from low ground (Landforms.rift), so only the carving gets there: dry ground
+        // near a rift stops at the sea level - a shelf level with the river mouth beside it.
+        if (water == HydroModel.NO_WATER && terrain < HydroModel.SEA_LEVEL && h0 >= HydroModel.SEA_LEVEL && !out.seaFree
+                && model.inputs.riftShore(x, z)) terrain = HydroModel.SEA_LEVEL;
+        // So is a river below the sea level there (a reach into the tip of a rift kept the level of the low floor round
+        // it, Y54): the native fill raised it to Y62 and it ran over its banks into the rift (77 blocks in 15 s at
+        // X2826 Z-8328). Its own level stands.
+        if (!out.seaFree && water != HydroModel.NO_WATER && water < HydroModel.SEA_WATER && model.inputs.riftShore(x, z)) out.seaFree = true;
         out.terrain = terrain;
         out.water = water;
         out.kind = kind;

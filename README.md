@@ -16,14 +16,35 @@ A world-generation mod for **Minecraft Java 26.3** (Fabric). It reshapes terrain
 2. Download `FreshGenerator-Fabric-26.3-<version>.jar` from the [latest release](https://github.com/jumonja-maker/FreshGenWorld/releases/latest) and put it into the `mods` folder.
 3. Create a new world with the normal **Default** world type: FreshGenerator replaces it, no extra option to pick.
 
-Existing chunks are never rebuilt; new terrain appears only in new chunks. **Start a new world for 0.9.3:** rivers, lakes, waterfalls and climate borders changed, so continuing an older world leaves seams where old and new chunks meet. The mod is in beta: back up your worlds.
+Existing chunks are never rebuilt; new terrain appears only in new chunks. **Start a new world for 0.9.4:** the world is deeper (down to Y-112), and mountains, deserts, villages, roads, volcanoes and caves changed, so continuing an older world leaves seams where old and new chunks meet. The mod is in beta: back up your worlds.
 
-### What's new in 0.9.3 (beta)
+**Compatibility notes.** FreshGenerator replaces the `minecraft:normal` (Default) world preset. In its own world it switches off all cave carvers (including carvers added by other mods) and uses its own sets of shipwrecks, ocean ruins and monuments. Since 0.9.4 it also uses its own village and pillager outpost sets (`freshgenerator:villages`, `freshgenerator:pillager_outposts`, built from the vanilla lists): mods or datapacks that change the vanilla `minecraft:villages` or `minecraft:pillager_outposts` sets have no effect in a FreshGenerator world. Surface structures of other mods are not checked against its rivers and lakes. Its mixins wrap parts of chunk generation (`NoiseChunk`, `NoiseBasedChunkGenerator`, `ChunkGenerator`, `ServerLevel`, `FeaturePlacer`); mods that rewrite the same code (for example C2ME) and Distant Horizons have not been tested with it.
+
+### What's new in 0.9.4 (beta)
+- **Generation fixes:** a valley floor under a very high icy peak could read its biome from above the top of the world. In 26.3 this stopped the area from ever generating (`Exception generating new chunk`) or wrote the cave biome `deep_dark` into the gorge, with grass on the ice. The bug was also in the published 0.9.3. A small volcanic vent could stop the generation of its chunk; fixed.
+- **Steep mountain streams** run in a V-shaped rocky gully instead of a slot with vertical walls 20+ blocks high. Rivers from 5 blocks wide get the river biome (before: 7), and frozen rivers follow the cold at the water's own height.
+- **Fewer villages, no clusters:** villages stand at least ~340 blocks apart (no more several villages on one meadow), and each cell of the village layout holds a village only with a 60% chance: neighbours and wide empty stretches alternate at random instead of a village every so many cells. Houses are never built on rivers, lakes or the sea; a village whose centre would stand on water is not built at all. Streets crossing water keep the native plank rule, but only where they join inhabited parts of a village: dead-end plank piers are gone. Pillager outposts, igloos, jungle and desert temples, trail ruins and land ruined portals are not placed on water either.
+- **Roads between villages:** about half of the villages are joined to a neighbour by a worn path of native village street blocks (dirt path, smooth sandstone in deserts) that winds with the terrain, breaks off and resumes, climbs mountains in switchbacks or not at all, and never reaches island villages. The path stays walkable (no steps higher than a block), crosses streams instead of running along their banks, keeps off ruined portals and other structures, never meets a lava pool, and is not built in worlds with structures turned off.
+- **Bridges** of native blocks where a road meets a river: a fallen log, stepping stones, plank boardwalks, wooden and stone bridges — intact, worn or ruined. A bridge spans the river across its channel and leads onto both banks (stairs down to a low bank, a step cut into a high one); every block of a worn or ruined bridge rests on a support, and the wood matches the biome.
+- **No lava holes on the surface:** the native surface lava lakes are gone (underground ones stay). Instead, rare volcanic vents: a small elongated basalt cone with lava in its crater in deserts, a lava pit sunk into the ground in badlands.
+- **Mountain ranges:** long continuous ranges with spurs, passes and through-valleys instead of single mountains standing in a field; single knobs away from the belts became hills.
+- **Wider deserts:** the hot belt is about twice as large; deserts are big continuous regions with sand seas of real dunes (prevailing wind per world), rocky tablelands and inselbergs.
+- **Natural snow and forest borders:** the snow and taiga borders break into lobes and outliers and follow the relief (hills first), instead of ruled lines.
+- **Volcanoes and impact craters:** rare volcanic provinces with stratovolcanoes (the rare giant reaches ~300), shields, calderas with lakes and cinder fields; impact craters of three ages, cut as a crescent into a slope, with a burnt, felled forest around fresh ones.
+- **Active volcanoes:** a third of the cones are active: a crusted lava lake in a pit on the crater floor, fresh black lava flows traced down the real slopes (they follow gullies and valleys, spread wide on flat ground, end in lobes and can dam a valley), bare ash on the upper cone, a belt of charred standing trunks below it, no snow on the crater and the fresh flows. No village, outpost or temple is built on a volcano's cone, in a fresh crater or by a rift.
+- **Volcanic islands and seamounts:** volcanoes on the sea floor rise as bare volcanic islands with beaches (some active, with a lava lake) or stay under the sea as seamounts of basalt and tuff with glowing vents.
+- **Rifts:** chasms from a few hundred blocks to three kilometres long and up to 170 deep, never below Y8. Their floor follows the low ground along their line, so a rift crossing a mountain splits it. They cross plains as well as mountains, stay dry inside and away from the sea; rivers and lake outlets pour into them as waterfalls into a plunge pool on the floor (icefalls in the frozen north).
+- **Deeper world and new caves (new worlds only):** the world reaches Y-112. Cave levels that come and go and tilt, spongework, vadose canyons, pits, mazes and great breakdown chambers with dozens of passages leaving their walls. Cave entrances stay rare (ground H ≥ 73).
+- **Escarpments:** cliff bands on plateau edges and mountain flanks, where rivers fall as waterfalls.
+- **Big waterfalls:** a stream that meets a steep face leaves its top as one waterfall of 12-40 blocks (two or three in a row on a long face) over a plunge pool in a short gorge, instead of running down the face in riffles. In frozen mountains the whole curtain is an icefall.
+- **Village details** such as lamps and flower beds stand on the ground: none hangs in the air above a graded slope.
+- **Water and landforms agree:** no walls of sea water beside rifts or in craters and calderas below sea level (a closed bowl stays dry or holds its own lake), no moat round a volcano, no springs or lava pouring out of rift walls, dry domes in the great chambers without lava falls at their edges, no cliffs across a valley side below a waterfall.
+- **Volcanic islands** carry land biomes (forest, taiga, beaches), also for `/locate biome`; shipwrecks, ocean ruins and monuments stay in the water around them.
+
+### In 0.9.3
 - **Rivers, lakes and waterfalls:** a drainage model of the whole landscape (flow routing, catchments, lake basins) decides where water runs. Streams start at real channel heads, join into rivers that widen downstream and reach the sea through broad valleys; lakes fill closed basins up to a level proven watertight block by block; waterfalls sit at real drops. The model is computed when chunks generate and is never saved: the same seed always gives the same water.
 - **Climate shape:** caves share the climate of the surface above them, climate borders meander instead of running straight, and a small island takes the climate of most of its land.
 - **Search:** `/locate biome minecraft:river` finds wide rivers (7+ blocks) within about 2 km of the player at any height and reports the river itself.
-
-**Compatibility notes.** FreshGenerator replaces the `minecraft:normal` (Default) world preset. In its own world it switches off all cave carvers (including carvers added by other mods) and uses its own sets of shipwrecks, ocean ruins and monuments. Its mixins wrap parts of chunk generation (`NoiseChunk`, `NoiseBasedChunkGenerator`, `ChunkGenerator`, `ServerLevel`, `FeaturePlacer`); mods that rewrite the same code (for example C2ME) and Distant Horizons have not been tested with it.
 
 ### In 0.9.2
 - **Much faster generation:** chunks generate about 4–14 times faster. The disabled vanilla cave carvers no longer query the climate of ~289 neighbouring chunks for every chunk; the generated blocks are identical.
@@ -46,7 +67,7 @@ Existing chunks are never rebuilt; new terrain appears only in new chunks. **Sta
 
 ### How the generator works
 
-Everything is built from Minecraft's own density functions, noise and material rules, compiled into a datapack at build time. A few small runtime hooks handle forests and glaciers. The mod adds no new biomes or blocks and no custom water simulation. Native biome selection, structures, aquifers and fluids stay in charge.
+Everything is built from Minecraft's own density functions, noise and material rules, compiled into a datapack at build time. Runtime hooks handle forests, glaciers, the drainage model of rivers and lakes (it decides where water stands when chunks generate; the game's own fluid rules then run unchanged) and village roads. The mod adds no new biomes or blocks. Native biome selection, structures, aquifers and fluids stay in charge.
 
 **Terrain.** One continuous height envelope replaces the native 3-D surface noise, so there are no floating islands or overhanging slabs. On top of that envelope:
 - regional landforms: massifs, ridges, plateaus with broad foothill aprons, and rare giant mountain provinces that rise on wide flanks instead of sheer walls;
@@ -98,9 +119,7 @@ Java 25, Gradle 9.8.2:
 gradle build
 ```
 
-If a dependency cannot be resolved, add `--init-script scripts/central-fallback.init.gradle` (the same fallback CI uses). The JAR is written to `build/libs`. The build compiles the worldgen pack (`src/tool`) and runs all Java tests. The `scripts/` folder holds package validators and analysis tools. `src/audit` contains test-only server observers used for native generation audits.
-
-Documentation for every subsystem is in [`docs/`](docs/). Start with [`docs/terrain-repair-0.9.1.md`](docs/terrain-repair-0.9.1.md) (covers 0.9.1 and 0.9.2), [`docs/caves-0.9.0.md`](docs/caves-0.9.0.md) and [`docs/product-direction.md`](docs/product-direction.md).
+If a dependency cannot be resolved, add `--init-script scripts/central-fallback.init.gradle` (the same fallback CI uses). The JAR is written to `build/libs`. The build compiles the worldgen pack (`src/tool`) and runs all Java tests; the published JARs in `dist/` are fixtures of those tests. `src/audit` and `src/smoke` contain test-only server observers.
 
 ---
 
@@ -112,14 +131,35 @@ Documentation for every subsystem is in [`docs/`](docs/). Start with [`docs/terr
 2. Скачайте `FreshGenerator-Fabric-26.3-<версия>.jar` из [последнего релиза](https://github.com/jumonja-maker/FreshGenWorld/releases/latest) и положите в папку `mods`.
 3. Создайте новый мир в обычном режиме **«По умолчанию»**: его создаёт FreshGenerator, отдельно выбирать ничего не нужно.
 
-Существующие чанки не перестраиваются: новая генерация появляется только в новых чанках. **Для 0.9.3 создайте новый мир:** изменились реки, озёра, водопады и климатические границы, и в старом мире на стыке старых и новых чанков останутся швы. Мод в стадии beta, делайте резервные копии миров.
+Существующие чанки не перестраиваются: новая генерация появляется только в новых чанках. **Для 0.9.4 создайте новый мир:** мир стал глубже (до Y−112), изменились горы, пустыни, деревни, дороги, вулканы и пещеры, и в старом мире на стыке старых и новых чанков останутся швы. Мод в стадии beta, делайте резервные копии миров.
 
-### Что нового в 0.9.3 (beta)
+**Совместимость.** FreshGenerator заменяет набор мира `minecraft:normal` («По умолчанию»). В своём мире он выключает все карверы пещер (в том числе добавленные другими модами) и использует свои наборы кораблекрушений, подводных руин и монументов. С 0.9.4 он использует и свои наборы деревень и аванпостов разбойников (`freshgenerator:villages`, `freshgenerator:pillager_outposts`, собраны из ванильных списков): моды и датапаки, которые меняют ванильные наборы `minecraft:villages` или `minecraft:pillager_outposts`, в мире FreshGenerator не действуют. Наземные постройки других модов с его реками и озёрами не сверяются. Его миксины оборачивают части генерации чанков (`NoiseChunk`, `NoiseBasedChunkGenerator`, `ChunkGenerator`, `ServerLevel`, `FeaturePlacer`); моды, которые переписывают тот же код (например, C2ME), и Distant Horizons вместе с ним не проверялись.
+
+### Что нового в 0.9.4 (beta)
+- **Исправлены сбои генерации:** дно долины под очень высоким ледяным пиком могло читать биом из ячейки выше верха мира. В 26.3 участок из-за этого не генерировался никогда (`Exception generating new chunk`) или в ущелье записывался пещерный биом `deep_dark` с травой посреди льда. Ошибка была и в опубликованной 0.9.3. Малое вулканическое жерло могло остановить генерацию своего чанка — исправлено.
+- **Крутые горные ручьи** текут в каменной V-образной промоине вместо щели с отвесными стенами в 20 с лишним блоков. Биом реки получают русла от 5 блоков (было от 7), замёрзшая река определяется холодом на высоте самой воды.
+- **Меньше деревень, без скоплений:** не ближе ~340 блоков друг к другу (больше нет нескольких деревень на одном лугу), и каждая клетка раскладки получает деревню лишь с шансом 60%: соседние деревни и широкие пустые места чередуются случайно, а не «через столько-то клеток». Дома не строятся на реках, озёрах и море; деревня, центр которой оказался бы на воде, не строится. Улицы через воду — по ванильному правилу, из досок, но только как переход между жилыми частями деревни: тупиковых дощатых пирсов больше нет. Аванпосты разбойников, иглу, храмы джунглей и пустыни, руины троп и наземные разрушенные порталы тоже не ставятся на воду.
+- **Дороги между деревнями:** примерно половина деревень соединена с соседней протоптанной дорогой из блоков деревенских улиц (тропа, в пустыне гладкий песчаник); она следует рельефу, обрывается и продолжается, в горы поднимается серпантином или не идёт вовсе, к островным деревням не ведёт. По тропе можно пройти без прыжков выше блока, ручьи она пересекает, а не идёт по их кромке, разрушенные порталы и другие постройки обходит, в лаву не ведёт; в мире с выключенными структурами дорог нет.
+- **Мосты** из ванильных блоков там, где дорога встречает реку: упавшее бревно, камни брода, мостки, деревянные и каменные мосты — целые, изношенные и разрушенные. Мост ложится поперёк русла и выводит на оба берега (ступени вниз к низкому берегу, ступень в край высокого), каждый блок изношенного и разрушенного моста держится на опоре, дерево — по биому.
+- **Нет лавовых дыр на поверхности:** родные поверхностные лавовые озёра убраны (подземные остались). Вместо них редкие вулканические жерла: в пустыне небольшой вытянутый базальтовый конус с лавой в кратере, в бедлендах — лавовая воронка, уходящая в землю.
+- **Горные хребты:** длинные связные хребты с отрогами, перевалами и сквозными долинами вместо одиночных гор посреди поля; одиночные бугры вдали от поясов стали холмами.
+- **Шире пустыни:** жаркий пояс примерно вдвое больше; пустыни — большие цельные области с песчаными морями из настоящих дюн (ветер свой у каждого мира), каменистыми плато и останцами.
+- **Естественные границы снега и леса:** граница снега и тайги распадается на лопасти и острова и следует рельефу (холмы первыми), а не идёт по линейке.
+- **Вулканы и метеоритные кратеры:** редкие вулканические провинции со стратовулканами (редкий гигант до ~300), щитовыми вулканами, кальдерами с озёрами и полями шлаковых конусов; кратеры трёх возрастов, на склоне вырезанные полумесяцем, вокруг свежих — выжженный поваленный лес.
+- **Активные вулканы:** треть конусов активна: лавовое озеро с коркой в яме на дне кратера, свежие чёрные потоки лавы, которые стекают по настоящему рельефу (идут по ложбинам и долинам, на ровном растекаются, кончаются лопастями и могут запрудить долину), голый пепел на верхнем конусе, ниже — пояс обгоревших стоящих стволов; на кратере и свежих потоках не лежит снег. На конусе вулкана, в свежем кратере и у расщелины не строятся деревни, аванпосты и храмы.
+- **Вулканические острова и подводные горы:** вулканы на морском дне поднимаются голыми вулканическими островами с пляжами (часть активна, с лавовым озером) или остаются под водой подводными горами из базальта и туфа со светящимися жерлами.
+- **Расщелины:** пропасти длиной от нескольких сотен блоков до трёх километров и глубиной до 170, не ниже Y8. Их дно идёт по низкой земле вдоль линии, поэтому расщелина, пересекающая гору, разрезает её. Они пересекают и равнины, и горы; внутри сухо, к морю они не выходят; реки и стоки озёр падают в них водопадами в чашу на дне (на морозном севере — ледопадами).
+- **Мир глубже и новые пещеры (только новые миры):** дно на Y−112. Уровни ходов, которые то есть, то нет, и наклоняются; губчатые полости, каньоны, колодцы, лабиринты и огромные залы-обрушения с десятками ходов из стен. Входы по-прежнему редкие (земля H ≥ 73).
+- **Эскарпы:** полосы обрывов на краях плато и склонах гор, с них реки падают водопадами.
+- **Большие водопады:** ручей, дошедший до крутого склона, срывается с его кромки одним водопадом на 12–40 блоков (на длинном склоне — двумя-тремя подряд) в чашу короткого ущелья, а не сбегает по склону перекатами. В замёрзших горах вся струя — ледопад.
+- **Мелкие детали деревень** — фонари и клумбы — стоят на земле, а не висят над выровненным склоном.
+- **Вода и формы рельефа согласованы:** нет стен морской воды у расщелин и в кратерах и кальдерах ниже уровня моря (замкнутая чаша сухая или со своим озером), нет рва вокруг вулкана, из стен расщелин не льются родники и лава, купола огромных залов сухие и без лавопадов по краю, ниже водопада нет поперечного обрыва на склоне долины.
+- **Вулканические острова** получают биомы суши (лес, тайга, пляжи), в том числе для `/locate biome`; кораблекрушения, подводные руины и монументы остаются в воде вокруг них.
+
+### В 0.9.3
 - **Реки, озёра и водопады:** модель стока всего ландшафта (направления течения, водосборы, котловины озёр) решает, где течёт вода. Ручьи начинаются в настоящих истоках, сливаются в реки, которые расширяются вниз по течению и выходят к морю широкими долинами; озёра заполняют замкнутые котловины до уровня, проверенного на герметичность по блокам; водопады стоят на настоящих уступах. Модель считается при генерации чанков и не сохраняется: один и тот же сид всегда даёт ту же воду.
 - **Форма климата:** пещеры получают климат поверхности над ними, климатические границы извиваются, а не идут прямыми линиями, маленький остров получает климат большей части своей суши.
 - **Поиск:** `/locate biome minecraft:river` находит широкие реки (от 7 блоков) примерно в 2 км от игрока с любой высоты и указывает на саму реку.
-
-**Совместимость.** FreshGenerator заменяет набор мира `minecraft:normal` («По умолчанию»). В своём мире он выключает все карверы пещер (в том числе добавленные другими модами) и использует свои наборы кораблекрушений, подводных руин и монументов. Его миксины оборачивают части генерации чанков (`NoiseChunk`, `NoiseBasedChunkGenerator`, `ChunkGenerator`, `ServerLevel`, `FeaturePlacer`); моды, которые переписывают тот же код (например, C2ME), и Distant Horizons вместе с ним не проверялись.
 
 ### В 0.9.2
 - **Генерация намного быстрее:** чанки создаются примерно в 4–14 раз быстрее. Выключенные ванильные карверы пещер больше не опрашивают климат ~289 соседних чанков на каждый чанк; блоки мира те же самые.
@@ -142,7 +182,7 @@ Documentation for every subsystem is in [`docs/`](docs/). Start with [`docs/terr
 
 ### Как устроен генератор
 
-Всё построено на собственных функциях плотности, шумах и правилах материалов Minecraft. При сборке они компилируются в датапак, а небольшие рантайм-хуки отвечают за леса и ледники. Новых биомов, блоков и собственной симуляции воды нет: выбор биомов, структуры, водоносные слои и жидкости остаются нативными.
+Всё построено на собственных функциях плотности, шумах и правилах материалов Minecraft. При сборке они компилируются в датапак, а рантайм-хуки отвечают за леса, ледники, модель стока рек и озёр (она решает, где стоит вода при генерации чанков; дальше работают обычные правила жидкостей игры) и дороги между деревнями. Новых биомов и блоков нет: выбор биомов, структуры, водоносные слои и жидкости остаются нативными.
 
 **Рельеф.** Нативный трёхмерный шум поверхности заменён единой непрерывной оболочкой высоты, поэтому нет висящих островов и нависающих плит. Поверх неё:
 - региональные формы: массивы, хребты, плато с широкими предгорьями и редкие провинции гигантских гор, которые поднимаются широкими склонами, а не отвесными стенами;
@@ -194,9 +234,7 @@ Java 25, Gradle 9.8.2:
 gradle build
 ```
 
-Если зависимость не скачивается, добавьте `--init-script scripts/central-fallback.init.gradle` (тот же запасной источник, что в CI). JAR появляется в `build/libs`. Сборка компилирует датапак генерации (`src/tool`) и запускает все Java-тесты. В `scripts/` лежат валидаторы пакета и инструменты анализа. В `src/audit` — тестовые наблюдатели для нативных проверок генерации на сервере.
-
-Документация по каждой подсистеме — в [`docs/`](docs/). Начните с [`docs/terrain-repair-0.9.1.md`](docs/terrain-repair-0.9.1.md) (0.9.1 и 0.9.2), [`docs/caves-0.9.0.md`](docs/caves-0.9.0.md) и [`docs/product-direction.md`](docs/product-direction.md).
+Если зависимость не скачивается, добавьте `--init-script scripts/central-fallback.init.gradle` (тот же запасной источник, что в CI). JAR появляется в `build/libs`. Сборка компилирует датапак генерации (`src/tool`) и запускает все Java-тесты; опубликованные JAR в `dist/` — образцы для этих тестов. В `src/audit` и `src/smoke` — тестовые наблюдатели для проверок на сервере.
 
 ---
 

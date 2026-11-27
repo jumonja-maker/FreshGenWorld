@@ -9,6 +9,9 @@ public final class HydroReach {
     static final HydroReach ABSENT = new HydroReach();
     /** Water stays 1 block below the bank top; banks are sampled this far beyond the channel edge. */
     static final double BANK_OFFSET = 1.5, SAMPLE = 2.0, REF_BACK = 8;
+    /** Inner gorge of a steep cascade: its walls start SIDE_ABOVE blocks over the local water and rise NOTCH blocks per
+     * block (63 degrees) until they meet the valley side. */
+    static final double SIDE_ABOVE = 2, NOTCH = 2;
     static final double[] BANK_OFFSETS = {0.7, 1.5, 2.5};
 
     public final long from, to;
@@ -400,6 +403,10 @@ public final class HydroReach {
      * the drop then belongs to this reach (riffles or a fall), not to an unplanned step at the node. */
     private double endLevel(HydroModel m, boolean useNext) {
         double wf = m.water(from), wt;
+        // Into a sink (a rift, a lava crater) from outside: the water keeps its level to the sink's edge and falls
+        // there; a profile down to the rift floor carved a trench 40 blocks deep before the brink (seed 31337 X-7470
+        // Z1400: water 51 beside ground 91).
+        if (intoSink(m)) return wf;
         switch (end) {
             case INTO_CHANNEL -> {
                 wt = m.channel(to) == 2 ? m.water(to) : wf;
@@ -420,6 +427,80 @@ public final class HydroReach {
         w = (int) Math.min(w, held ? Math.max(bottom, Math.floor(ceiling)) : Math.floor(ceiling));
         return Math.max(w, end == TERMINAL ? Integer.MIN_VALUE / 2 : bottom);
     }
+    /** Arc where the reach enters a sink of the landforms (a rift, a lava crater), NaN until measured. */
+    private volatile double sinkArc = Double.NaN;
+    /** Arc where the reach enters a sink of the landforms: +infinity when it never does, 0 when it starts inside one.
+     * Columns outside the sink see the reach only up to there (HydroField.evaluate): its drop into a rift is the rift's
+     * own wall, not a valley carved beside the rift down to its floor - those valleys lay below the sea level, filled
+     * with sea water and stood as half-moon walls of water against the dry rift (seed 31337 X-6980 Z1340). Measured
+     * every SINK_STEP blocks along the centreline. */
+    double sinkArc(HydroModel m) {
+        double a = sinkArc;
+        if (!Double.isNaN(a)) return a;
+        a = Double.POSITIVE_INFINITY;
+        for (double t = 0; t <= length; t += SINK_STEP) {
+            double[] q = pointAt(t);
+            if (m.inputs.sink((int) Math.floor(q[0]), (int) Math.floor(q[1]))) { a = t; break; }
+        }
+        if (a == Double.POSITIVE_INFINITY && length > 0) {
+            double[] q = pointAt(length);
+            if (m.inputs.sink((int) Math.floor(q[0]), (int) Math.floor(q[1]))) a = length;
+        }
+        sinkArc = a;
+        return a;
+    }
+    static final double SINK_STEP = 2;
+    /** Plunge pool at the foot of the wall where the reach falls into a sink: {x, z, radius, water level}, an empty
+     * array when there is none, null until measured. */
+    private volatile double[] riftPool;
+    private static final double[] NO_POOL = new double[0];
+    /** The pool of a wet reach falling into a sink (a rift): POOL_IN blocks inside the wall on its centreline, POOL_R
+     * plus half the channel width across, water one block under the lowest ground round it (the floor holds it), or
+     * null. The water of the waterfall lands in it instead of spreading over the dry floor. */
+    double[] riftPool(HydroModel m) {
+        double[] p = riftPool;
+        if (p == null) {
+            p = NO_POOL;
+            double sa = sinkArc(m);
+            if (wet && intoSink(m) && sa > 0 && sa < length) {
+                double[] c = pointAt(Math.min(length, sa + POOL_IN));
+                double r = POOL_R + width(sa) / 2, low = Double.POSITIVE_INFINITY;
+                for (int k = 0; k < 16; k++) {
+                    double a = k * Math.PI / 8;
+                    low = Math.min(low, m.terrain.at((int) Math.floor(c[0] + Math.cos(a) * (r + 1.5)), (int) Math.floor(c[1] + Math.sin(a) * (r + 1.5))));
+                }
+                double level = Math.floor(low) - 1;
+                // A river of the sink's own drainage passing the pool: the pool takes its water level and is one water
+                // body with it (a pool above it drained into its channel: seed 424242 X-7796 Z-1166, 309 blocks).
+                double[] pr = new double[3];
+                for (int dj = -2; dj <= 2; dj++) for (int di = -2; di <= 2; di++) {
+                    HydroReach q = m.reach(HydroModel.nodeAt((int) Math.floor(c[0]) + di * HydroModel.SPACING, (int) Math.floor(c[1]) + dj * HydroModel.SPACING));
+                    if (q == null || q == this || !q.wet || !q.fromSink(m)) continue;
+                    q.project(c[0], c[1], pr);
+                    if (pr[0] < r + 4) level = Math.min(level, q.waterLevel(m, pr[1]));
+                }
+                if (level > HydroModel.SEA_LEVEL - 60) p = new double[]{c[0], c[1], r, level};
+            }
+            riftPool = p;
+        }
+        return p.length == 0 ? null : p;
+    }
+    static final double POOL_IN = 3, POOL_R = 5, POOL_DEPTH = 2;
+    /** Whether the reach's nodes lie in a sink: bit 1 the upstream node, bit 2 the downstream one; -1 until measured. */
+    private volatile int sinkNodes = -1;
+    private int sinkNodes(HydroModel m) {
+        int v = sinkNodes;
+        if (v >= 0) return v;
+        v = 0;
+        if (from != HydroModel.NONE && m.inputs.sink(m.x(from), m.z(from))) v |= 1;
+        if (to != HydroModel.NONE && m.inputs.sink(m.x(to), m.z(to))) v |= 2;
+        sinkNodes = v;
+        return v;
+    }
+    /** A reach of a sink's own drainage (its upstream node lies in the sink): seen only from inside the sink. */
+    boolean fromSink(HydroModel m) { return (sinkNodes(m) & 1) != 0; }
+    /** A reach from outside into a sink. */
+    boolean intoSink(HydroModel m) { return sinkNodes(m) == 2; }
     private volatile boolean startKnown;
     private volatile int start;
     /** First water block of this wet reach without building its profile. Computed iteratively from the far end of
@@ -455,15 +536,31 @@ public final class HydroReach {
         double totalDrop = 0;
         for (int i = 1; i < center.length; i++) { totalDrop += Math.max(0, center[i - 1] - center[i]); cumDrop[i] = totalDrop; }
         double[] fallArcs = new double[0], fallDrop = new double[0];
+        boolean[] fallKnick = new boolean[0];
+        double[][] faceWindows = null;
         double drop = wf - wt;
+        double[] extra = neighbourCeilings(m, bottom);
         if (k >= 3) {
             int bi = -1, bj = -1; double bestDrop = 0;
             for (int i = 0; i < center.length; i++) for (int j = i + 1; j < center.length && s[j] - s[i] <= 6; j++) {
                 double d = center[i] - center[j];
                 if (d > bestDrop) { bestDrop = d; bi = i; bj = j; }
             }
+            double[][] faces;
             // A cliff in the ground takes the whole drop (the ground below it is already low).
-            if (bestDrop >= 3 && bestDrop >= 0.6 * k) { fallArcs = new double[]{(s[bi] + s[bj]) / 2}; fallDrop = new double[]{drop}; }
+            if (bestDrop >= 3 && bestDrop >= 0.6 * k) { fallArcs = new double[]{(s[bi] + s[bj]) / 2}; fallDrop = new double[]{drop}; fallKnick = new boolean[1]; }
+            else if (k >= FACE_MIN && (faces = steepFaces(drop, reachable(extra))).length > 0) {
+                // Steep faces (user 26.11, "I did not notice big waterfalls"): where the ground under the channel falls at
+                // least FACE_SLOPE blocks per block over up to FACE_SPAN blocks, the stream leaves the top of the face as
+                // one waterfall taking the drop of the face; the water below it runs in a short gorge down the face.
+                // Before, a mountain stream losing 25-54 blocks on a 30-50-block reach ran down the face as riffles
+                // (no cliff within 6 blocks), and a knickpoint took at most 3 + width blocks: 0 falls of 12+ blocks
+                // among 180 such reaches (seed 31337, 6 x 6 km). The lip sits at the top of the face: below it the ground
+                // is lower than the water above it, so a lip further down would be a level standing above its banks.
+                fallArcs = new double[faces.length]; fallDrop = new double[faces.length]; fallKnick = new boolean[faces.length];
+                for (int f = 0; f < faces.length; f++) { fallArcs[f] = faces[f][0]; fallDrop[f] = faces[f][1]; }
+                faceWindows = faces;
+            }
             else {
                 // Knickpoint on a resistant rock step early in the reach. It takes at most KNICK_BASE + KNICK_WIDTH x
                 // width blocks of the drop; the rest runs as riffles along the ground below it, so the river below
@@ -477,9 +574,11 @@ public final class HydroReach {
                         fallArcs = new double[]{length * (0.15 + 0.12 * u2 * 2), length * (0.50 + 0.15 * u2 * 2)};
                         double each = Math.min(cap, drop / 2);
                         fallDrop = new double[]{each, each};
+                        fallKnick = new boolean[]{true, true};
                     } else {
                         fallArcs = new double[]{length * (0.15 + 0.25 * u2)};
                         fallDrop = new double[]{Math.min(cap, drop)};
+                        fallKnick = new boolean[]{true};
                     }
                 }
             }
@@ -488,6 +587,17 @@ public final class HydroReach {
         double planned = 0;
         for (double d : fallDrop) planned += d;
         double rest = Math.max(0, drop - planned);
+        if (faceWindows != null) {
+            // The drop left to riffles runs where the ground descends outside the faces (they took theirs).
+            totalDrop = 0;
+            for (int i = 1; i < center.length; i++) {
+                double mid = (s[i - 1] + s[i]) / 2;
+                boolean inFace = false;
+                for (double[] fw : faceWindows) inFace |= mid >= fw[2] && mid <= fw[3];
+                if (!inFace) totalDrop += Math.max(0, center[i - 1] - center[i]);
+                cumDrop[i] = totalDrop;
+            }
+        }
         // Continuous ramp from the exact upstream level to the exact downstream level; the water is its floor,
         // so riffles fall where the ramp crosses whole levels and the water never stands above the ramp. The drop not
         // taken by falls is spread by the terrain-weighted progress.
@@ -507,7 +617,6 @@ public final class HydroReach {
         }
         int[] water = new int[blocks];
         double[] bed = new double[blocks];
-        double[] extra = neighbourCeilings(m, bottom);
         double ceiling = Double.POSITIVE_INFINITY;
         // Receiving lakes and the sea hold the level up (backwater); a terminal reach may sink freely.
         boolean held = end == INTO_LAKE || end == INTO_SEA;
@@ -534,7 +643,7 @@ public final class HydroReach {
             int lip = (int) Math.ceil(arc);
             int above = water[Math.max(0, Math.min(blocks - 1, lip - 1))], below = water[Math.min(blocks - 1, lip + 1)];
             if (above - below < MIN_FALL) continue;
-            keptArcs[nf] = arc; tops[nf] = above; lows[nf] = below; keptKnick[nf] = fallDrop[f] < drop; nf++;
+            keptArcs[nf] = arc; tops[nf] = above; lows[nf] = below; keptKnick[nf] = fallKnick[f]; nf++;
         }
         double[] arcs = java.util.Arrays.copyOf(keptArcs, nf);
         double[] poolX = new double[nf], poolZ = new double[nf], poolR = new double[nf], poolDepth = new double[nf];
@@ -553,6 +662,56 @@ public final class HydroReach {
         result.ramp = ramp; result.knick = java.util.Arrays.copyOf(keptKnick, nf);
         return result;
     }
+    /** Highest ground the water can follow along the centreline: the natural ground, but never more than a block over
+     * the lowest bank or neighbour ceiling met so far (the water profile never rises above that running minimum).
+     * A face of the natural ground below a receiving valley's carved side is no face for the water: the stream runs
+     * down that side in steps (seed 31337 X1666 Z-548: a 39-block face, the water held 28 blocks lower from the start). */
+    double[] reachable(double[] extra) {
+        double[] g = new double[center.length];
+        double run = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < center.length; i++) {
+            run = Math.min(run, Math.min(bankCeil[i], extra[i]));
+            g[i] = Math.min(center[i], run + 1);
+        }
+        return g;
+    }
+    /** Steep faces of the ground along the centreline, greedily by drop: {lip arc, fall drop, face top arc, face
+     * bottom arc}, sorted by arc. A face falls at least FACE_SLOPE blocks per block over at most FACE_SPAN blocks
+     * and at least FACE_MIN blocks; its lip is the top of the face (flat ground above it is trimmed off, so the
+     * water never drops on the flat before the face), at least FACE_EDGE blocks from the start of the reach. The
+     * falls together take at most the drop of the reach. */
+    double[][] steepFaces(double drop, double[] ground) {
+        int n = ground.length;
+        boolean[] used = new boolean[n];
+        java.util.ArrayList<double[]> out = new java.util.ArrayList<>();
+        double remaining = drop;
+        for (int f = 0; f < FACE_MAX && remaining >= FACE_MIN; f++) {
+            int bi = -1, bj = -1; double bd = 0;
+            for (int i = 0; i < n; i++) {
+                if (s[i] < FACE_EDGE || used[i]) continue;
+                for (int j = i + 1; j < n && s[j] - s[i] <= FACE_SPAN; j++) {
+                    if (used[j]) break;
+                    double d = ground[i] - ground[j];
+                    if (d >= FACE_MIN && d >= FACE_SLOPE * (s[j] - s[i]) && d > bd) { bd = d; bi = i; bj = j; }
+                }
+            }
+            if (bi < 0) break;
+            // The face proper: no flat run at its top or bottom.
+            while (bi + 1 < bj && ground[bi] - ground[bi + 1] < 0.5 * FACE_SLOPE * (s[bi + 1] - s[bi])) bi++;
+            while (bj - 1 > bi && ground[bj - 1] - ground[bj] < 0.5 * FACE_SLOPE * (s[bj] - s[bj - 1])) bj--;
+            double d = Math.min(remaining, ground[bi] - ground[bj]);
+            for (int q = 0; q < n; q++) if (s[q] >= s[bi] - FACE_GAP && s[q] <= s[bj] + FACE_GAP) used[q] = true;
+            if (d < FACE_MIN) continue;
+            out.add(new double[]{Math.min(length - 1, s[bi] + 1), d, s[bi], s[bj]});
+            remaining -= d;
+        }
+        out.sort((a, b) -> Double.compare(a[0], b[0]));
+        return out.toArray(new double[0][]);
+    }
+    /** Steep faces: at least FACE_MIN blocks at FACE_SLOPE blocks per block or steeper over at most FACE_SPAN
+     * blocks of channel; up to FACE_MAX per reach, FACE_GAP blocks apart. */
+    static final double FACE_MIN = 10, FACE_SLOPE = 1.0, FACE_SPAN = 20, FACE_EDGE = 2, FACE_GAP = 8;
+    static final int FACE_MAX = 3;
     /** Smallest drop (blocks) kept as a waterfall with a plunge pool; smaller steps are riffles. */
     static final int MIN_FALL = 2;
     /** Largest knickpoint fall: KNICK_BASE + KNICK_WIDTH blocks per block of channel width (6 for a creek, 13 for a
@@ -593,8 +752,16 @@ public final class HydroReach {
             // REF_BACK blocks; it is continuous across nodes (the floodplain follows the valley slope).
             e[b] = Math.max(ref, r + 0.1);
         }
+        // Below a fall the floor comes down at most FLOOR_FALL blocks per block of channel. Delayed by REF_BACK, a fall of
+        // 22 blocks dropped the whole valley floor beside the stream at once, 8 blocks below the lip where the stream
+        // itself ran level: a dry cliff 11-18 blocks high between two columns of the valley side, the flat floor below
+        // it cut 20-28 blocks into the mountain flank (OpenAI random6 audit 26.11: seed 1243023250 X-842 Z-874, Y216 next
+        // to Y198). The floor only rises by this: the inner gorge (SIDE_ABOVE, NOTCH) carves the walls beside the water.
+        for (int b = 1; b < n; b++) e[b] = Math.max(e[b], e[b - 1] - FLOOR_FALL);
         return e;
     }
+    /** Steepest descent of the valley floor reference along the channel (blocks per block). */
+    static final double FLOOR_FALL = 1.0;
     /** The water block REF_BACK blocks upstream (the upstream reach's tail over the first blocks): the lowest bank top
      * that still holds the flowing water of a riffle step. */
     static double[] hold(int[] water, double[][] tail) {
@@ -610,7 +777,7 @@ public final class HydroReach {
     private double[] neighbourCeilings(HydroModel m, int bottom) {
         double[] out = new double[px.length];
         java.util.Arrays.fill(out, Double.POSITIVE_INFINITY);
-        if (end != INTO_CHANNEL || m.channel(to) != 2) return out;
+        if (end != INTO_CHANNEL || m.channel(to) != 2 || intoSink(m)) return out;
         java.util.ArrayList<HydroReach> receivers = new java.util.ArrayList<>();
         HydroReach downstream = m.reach(to);
         if (downstream != null && downstream.wet) receivers.add(downstream);
@@ -629,6 +796,8 @@ public final class HydroReach {
                 for (HydroReach q : receivers) {
                     if (bx < q.minX || bx > q.maxX || bz < q.minZ || bz > q.maxZ) continue;
                     q.project(bx, bz, pr);
+                    // The part of a receiver inside a sink (a rift floor) carves nothing outside it (HydroField.evaluate).
+                    if (pr[1] >= q.sinkArc(m) && !m.inputs.sink((int) Math.floor(bx), (int) Math.floor(bz))) continue;
                     double qHalf = q.width(pr[1]) / 2, xb = pr[0] - qHalf, c;
                     if (xb <= 0) c = bottom;
                     else {
@@ -648,6 +817,11 @@ public final class HydroReach {
         if (end == INTO_CHANNEL && m.channel(to) == 1) b1 = m.dryBed(to);
         else if (end == INTO_CHANNEL && m.channel(to) == 2) b1 = m.water(to) - HydroClimate.depth(m.depthK(to), m.flow(to));
         else b1 = b0 - 1;
+        // A dry wash into a sink keeps its level to the sink's edge, as the water of a wet one does (endLevel): its bed
+        // went down to the rift floor before the brink and cut the ground beside the rift below the sea level, where
+        // the native fill stood as sea water at Y62 over the dry rift (seed 1243023250 X10958 Z2580: ground 92 cut to
+        // 61, X407 Z-9807: 114 to 63).
+        if (intoSink(m)) b1 = b0 - 1;
         b1 = Math.min(b0, b1);
         int blocks = (int) Math.ceil(length) + 1;
         double[] bed = new double[blocks];
@@ -695,6 +869,14 @@ public final class HydroReach {
             } else {
                 double xb = d - half, fpa = floodplainAt(sideArc), bank = bankAt(sideArc), side = sideArc == arc ? ref : p.floorAt(sideArc);
                 carve = xb <= fpa ? side + Math.min(0.4 + 1.6 * xb, bank + 0.4) : side + bank + 0.4 + riseAt(sideArc, xb - fpa);
+                // On a steep cascade the floor reference (the water REF_BACK blocks upstream) stands far above the local
+                // water, and the channel ran in a slot with vertical walls 14-26 blocks high (audits 25.11 Fable M-10,
+                // OpenAI, Opus: seed 314159265 X-256 Z2400, a stream falling 1.3 blocks per block). An inner gorge opens
+                // from SIDE_ABOVE blocks over the local water, its walls rising NOTCH blocks per block until they meet the
+                // valley side (the floor itself stays: a lower stretch of a winding stream must not cut under the upper
+                // one). The containment rule (HydroField.column) holds a riffle's water with banks up to two blocks over it.
+                double local = (sideArc == arc ? w : p.waterAt(sideArc)) + SIDE_ABOVE;
+                if (side > local) carve = Math.min(carve, local + 0.4 + amphitheatre(p, x, z, arc) * xb);
                 // Point bars (player report 23.11: creeks ran between two vertical banks everywhere, like a dug ditch).
                 // On the inner side of a bend the bank rises gently from a shelf level with the water - a gravel or
                 // grass bar - while the outer bank stays a cut bank. The bar never drops below the water REF_BACK
@@ -726,6 +908,26 @@ public final class HydroReach {
         }
         out[0] = carve; out[1] = water; out[2] = channel ? 1 : 0; out[3] = inPool ? 1 : 0;
     }
+
+    /** Wall slope of the inner gorge at a column (blocks per block): NOTCH, gentler round the plunge pool of a waterfall
+     * below its lip - an amphitheatre opening downward instead of a slot with near-vertical walls (audit 26.11 Opus N-8;
+     * Lamb & Dietrich 2009). Its radius grows with the height of the fall and wanders a little round the pool. */
+    static double amphitheatre(Profile p, double x, double z, double arc) {
+        double notch = NOTCH;
+        for (int f = 0; f < p.fallArcs.length; f++) {
+            if (arc < p.fallArcs[f] + 0.5) continue;
+            double dx = x - p.poolX[f], dz = z - p.poolZ[f], dist = Math.hypot(dx, dz);
+            int height = p.fallTop[f] - p.poolLevel[f];
+            double wander = 1 + 0.18 * Math.sin(3 * Math.atan2(dz, dx) + p.poolX[f] * 0.37);
+            double reach = (p.poolR[f] + Math.max(4, AMPH_SHARE * height)) * wander;
+            if (dist >= reach) continue;
+            double t = HydroClimate.smooth(p.poolR[f], reach, dist);
+            notch = Math.min(notch, AMPH_NOTCH + (NOTCH - AMPH_NOTCH) * t);
+        }
+        return notch;
+    }
+    /** Amphitheatre wall slope next to the pool and its extent beyond the pool as a share of the fall height. */
+    static final double AMPH_NOTCH = 1.25, AMPH_SHARE = 0.45;
 
     boolean connected(HydroReach o) { return to == o.to || to == o.from || o.to == from; }
     /** Whether o continues this river at a node (the reach downstream of which this one is the main donor, or the

@@ -18,7 +18,8 @@ class OceanStructureTest {
         var pack = WorldgenCatalog.compile(vanilla);
         var structural = new TreeSet<String>();
         for (String k : pack.keySet()) for (String r : List.of("structure", "structure_set", "biome", "placed_feature", "feature"))
-            if (k.contains("/worldgen/" + r + "/") && !HydrologyCompiler.DECOR.contains(k)) structural.add(k);
+            if (k.contains("/worldgen/" + r + "/") && !HydrologyCompiler.DECOR.contains(k) && !VillageStructureCompiler.FEATURES.contains(k)
+                    && !VillageStructureCompiler.SETS.contains(k) && !VolcanicVentCompiler.FILES.contains(k)) structural.add(k);
         assertEquals(REVIEWED, structural);
         // Native 26.3 random-spread values; the native sets themselves stay untouched (audit 23.11).
         Map<String, int[]> nativeSpread = Map.of("shipwrecks", new int[]{24, 4, 165745295}, "ocean_ruins", new int[]{20, 8, 14357621},

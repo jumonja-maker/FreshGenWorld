@@ -33,10 +33,14 @@ abstract class GlacialSurfaceMixin {
             return;
         }
         boolean previous=GlacialSurface.begin();
+        // The landform model of the world for the native surface pass: no badlands pillars in rifts and crater bowls.
+        var landforms=dev.freshgenerator.landform.LandformSurfaceScope.enter(
+            dev.freshgenerator.landform.LandformDensity.world(state,generator.generatorSettings().value()));
         try {
             original.call(system,state,biomes,context,chunk,noise,rule,possibleBiomes);
             GlacialSurface.apply(chunk,state,system,biomes,possibleBiomes,generator.generatorSettings().value());
         } finally {
+            dev.freshgenerator.landform.LandformSurfaceScope.exit(landforms);
             GlacialSurface.end(previous);
         }
     }

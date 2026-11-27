@@ -10,6 +10,7 @@
     "ChunkGeneratorHydrologyMixin",
     "VillageTerrainMixin",
     "VillageLakeMixin",
+    "RoadLakeMixin",
     "VillageFarmSupportMixin",
     "MaterialRuleContextAccessor",
     "GlacialSurfaceMixin",
@@ -21,7 +22,11 @@
     "StructureSetsMixin",
     "StructureStateMixin",
     "DiskFeatureMixin",
-    "ServerLevelBiomeMixin"
+    "ServerLevelBiomeMixin",
+    "DeepWorldMixin",
+    "DeepLavaMixin",
+    "DeepStructureMixin",
+    "BadlandsPillarMixin"
   ],
   "injectors": {
     "defaultRequire": 1
